@@ -1,0 +1,181 @@
+{
+  "version": "1.0",
+  "created_by": "Mateus Camara Dias",
+  "description": "Dataset gold para eval de execution accuracy do agente NutriQuery Text-to-SQL",
+  "total": 21,
+  "questions": [
+    {
+      "id": "Q001",
+      "question": "Quanto de ferro tem o fígado?",
+      "difficulty": "simple_filter",
+      "tags": ["ferro", "ILIKE", "JOIN"],
+      "clinical_note": null,
+      "sql_reference": "SELECT f.food_name, fv.value, n.unit FROM fact_nutrient_values fv JOIN dim_food f ON fv.food_id = f.food_id JOIN dim_nutrient n ON fv.nutrient_id = n.nutrient_id WHERE n.nutrient_name = 'ferro_mg' AND f.food_name ILIKE '%fígado%' ORDER BY fv.value DESC"
+    },
+    {
+      "id": "Q002",
+      "question": "Qual fruta tem maior teor de vitamina C?",
+      "difficulty": "join_group",
+      "tags": ["vitamina_c", "frutas", "JOIN grupo", "ranking"],
+      "clinical_note": null,
+      "sql_reference": "SELECT f.food_name, fv.value, n.unit FROM fact_nutrient_values fv JOIN dim_food f ON fv.food_id = f.food_id JOIN dim_nutrient n ON fv.nutrient_id = n.nutrient_id JOIN dim_food_group fg ON f.food_group_id = fg.food_group_id WHERE n.nutrient_name = 'vitamina_c_mg' AND fg.food_group_name = 'Frutas e derivados' ORDER BY fv.value DESC LIMIT 10"
+    },
+    {
+      "id": "Q003",
+      "question": "Qual grupo alimentar tem maior quantidade de cálcio?",
+      "difficulty": "aggregation",
+      "tags": ["calcio", "AVG", "GROUP BY", "ranking por grupo"],
+      "clinical_note": null,
+      "sql_reference": "SELECT fg.food_group_name, AVG(fv.value) AS media_calcio, n.unit FROM fact_nutrient_values fv JOIN dim_food f ON fv.food_id = f.food_id JOIN dim_food_group fg ON f.food_group_id = fg.food_group_id JOIN dim_nutrient n ON fv.nutrient_id = n.nutrient_id WHERE n.nutrient_name = 'calcio_mg' GROUP BY fg.food_group_name, n.unit ORDER BY media_calcio DESC"
+    },
+    {
+      "id": "Q004",
+      "question": "Qual semente tem maior cálcio em comparação com o leite e derivados?",
+      "difficulty": "join_group",
+      "tags": ["calcio", "dois grupos", "comparação", "OR"],
+      "clinical_note": "Gergelim (825mg/100g) supera vários queijos. Relevante para vegetarianos e intolerantes à lactose.",
+      "sql_reference": "SELECT f.food_name, fg.food_group_name, fv.value, n.unit FROM fact_nutrient_values fv JOIN dim_food f ON fv.food_id = f.food_id JOIN dim_food_group fg ON f.food_group_id = fg.food_group_id JOIN dim_nutrient n ON fv.nutrient_id = n.nutrient_id WHERE n.nutrient_name = 'calcio_mg' AND (fg.food_group_name = 'Nozes e sementes' OR fg.food_group_name = 'Leite e derivados') ORDER BY fv.value DESC"
+    },
+    {
+      "id": "Q005",
+      "question": "Qual alimento mais calórico de cada grupo?",
+      "difficulty": "aggregation",
+      "tags": ["energia_kcal", "RANK()", "PARTITION BY", "window function"],
+      "clinical_note": "Todos os óleos empatam em 884 kcal/100g — empate real no banco, comportamento esperado.",
+      "sql_reference": "WITH ranked AS (SELECT f.food_name, fg.food_group_name, fv.value, n.unit, RANK() OVER (PARTITION BY fg.food_group_name ORDER BY fv.value DESC) AS rnk FROM fact_nutrient_values fv JOIN dim_food f ON fv.food_id = f.food_id JOIN dim_food_group fg ON f.food_group_id = fg.food_group_id JOIN dim_nutrient n ON fv.nutrient_id = n.nutrient_id WHERE n.nutrient_name = 'energia_kcal') SELECT food_name, food_group_name, value, unit FROM ranked WHERE rnk = 1 ORDER BY value DESC"
+    },
+    {
+      "id": "Q006",
+      "question": "Qual alimento mais pobre em vitamina B1?",
+      "difficulty": "ambiguous",
+      "tags": ["tiamina", "value > 0", "armadilha NULL", "ASC"],
+      "clinical_note": "Armadilha: sem filtro value > 0 o agente retorna NULLs e zeros que significam dado ausente na TACO, não ausência real do nutriente no alimento.",
+      "sql_reference": "SELECT f.food_name, fv.value, n.unit FROM fact_nutrient_values fv JOIN dim_food f ON fv.food_id = f.food_id JOIN dim_nutrient n ON fv.nutrient_id = n.nutrient_id WHERE n.nutrient_name = 'tiamina_mg' AND fv.value IS NOT NULL AND fv.value > 0 ORDER BY fv.value ASC LIMIT 10"
+    },
+    {
+      "id": "Q007",
+      "question": "Qual alimento tem melhor fonte de ômega-3?",
+      "difficulty": "ambiguous",
+      "tags": ["omega3", "SUM", "ALA vs EPA DHA", "armadilha conversão"],
+      "clinical_note": "ARMADILHA CLÍNICA: Linhaça lidera com 19,8g em valor absoluto (ALA vegetal), mas a taxa de conversão de ALA para EPA é de apenas 5-12% e para DHA inferior a 1% em adultos. Salmão aparece em 6º com 2,8g de EPA+DHA pré-formados — biologicamente superiores. Em homens a conversão de ALA para DHA pode ser praticamente zero (Burdge & Calder, 2005). Mulheres convertem até ~9% de ALA em DHA devido ao estrogênio que regula positivamente FADS2/ELOVL2 (Childs et al., 2011; Giltay et al., 2013). Adicionalmente, mais de 75% do ALA ingerido é desviado para beta-oxidação antes de entrar na via de conversão. Para fins clínicos de redução de triglicerídeos, neuroproteção e resolução inflamatória, fontes marinhas de EPA+DHA são insubstituíveis por fontes vegetais de ALA.",
+      "sql_reference": "SELECT f.food_name, SUM(fv.value) AS total_omega3_g, 'g' AS unit FROM fact_nutrient_values fv JOIN dim_food f ON fv.food_id = f.food_id JOIN dim_nutrient n ON fv.nutrient_id = n.nutrient_id WHERE n.nutrient_name IN ('ag_18_3_n3_g', 'ag_20_5_g', 'ag_22_6_g') GROUP BY f.food_name ORDER BY total_omega3_g DESC LIMIT 10"
+    },
+    {
+      "id": "Q008",
+      "question": "Qual alimento tem maior teor de zinco?",
+      "difficulty": "simple_filter",
+      "tags": ["zinco", "ranking", "ORDER BY DESC"],
+      "clinical_note": null,
+      "sql_reference": "SELECT f.food_name, fv.value, n.unit FROM fact_nutrient_values fv JOIN dim_food f ON fv.food_id = f.food_id JOIN dim_nutrient n ON fv.nutrient_id = n.nutrient_id WHERE n.nutrient_name = 'zinco_mg' AND fv.value IS NOT NULL ORDER BY fv.value DESC LIMIT 10"
+    },
+    {
+      "id": "Q009",
+      "question": "Qual alimento é mais pobre em vitamina B3?",
+      "difficulty": "ambiguous",
+      "tags": ["niacina", "value > 0", "armadilha NULL", "ASC"],
+      "clinical_note": "Mesma armadilha da Q006: sem filtro value > 0 o agente retorna ausência de dado como ausência de nutriente.",
+      "sql_reference": "SELECT f.food_name, fv.value, n.unit FROM fact_nutrient_values fv JOIN dim_food f ON fv.food_id = f.food_id JOIN dim_nutrient n ON fv.nutrient_id = n.nutrient_id WHERE n.nutrient_name = 'niacina_mg' AND fv.value IS NOT NULL AND fv.value > 0 ORDER BY fv.value ASC LIMIT 10"
+    },
+    {
+      "id": "Q010",
+      "question": "Quantos alimentos não possuem vitamina D?",
+      "difficulty": "ambiguous",
+      "tags": ["vitamina_d", "dados insuficientes", "limitação TACO", "regra 11"],
+      "clinical_note": "LIMITAÇÃO DE DADOS: A TACO 4ª edição não possui dados de vitamina D para nenhum dos 597 alimentos. O agente deve aplicar a regra 11 e informar a limitação em vez de retornar 597 ou tabela vazia.",
+      "expected_behavior": "regra_11_dados_insuficientes",
+      "sql_reference": "SELECT COUNT(DISTINCT f.food_id) AS total_sem_vitamina_d FROM dim_food f WHERE f.food_id NOT IN (SELECT fv.food_id FROM fact_nutrient_values fv JOIN dim_nutrient n ON fv.nutrient_id = n.nutrient_id WHERE n.nutrient_name = 'vitamina_d_mcg' AND fv.value IS NOT NULL AND fv.value > 0)"
+    },
+    {
+      "id": "Q011",
+      "question": "Quais alimentos possuem maior quantidade de vitamina D?",
+      "difficulty": "simple_filter",
+      "tags": ["vitamina_d", "dados insuficientes", "limitação TACO", "regra 11"],
+      "clinical_note": "LIMITAÇÃO DE DADOS: A TACO 4ª edição não registra valores de vitamina D. O agente deve aplicar a regra 11.",
+      "expected_behavior": "regra_11_dados_insuficientes",
+      "sql_reference": "SELECT f.food_name, fv.value, n.unit FROM fact_nutrient_values fv JOIN dim_food f ON fv.food_id = f.food_id JOIN dim_nutrient n ON fv.nutrient_id = n.nutrient_id WHERE n.nutrient_name = 'vitamina_d_mcg' AND fv.value IS NOT NULL AND fv.value > 0 ORDER BY fv.value DESC LIMIT 10"
+    },
+    {
+      "id": "Q012",
+      "question": "Quais alimentos mais ricos em gordura trans?",
+      "difficulty": "join_group",
+      "tags": ["trans", "SUM", "dois nutrientes", "ag_18_1t_g", "ag_18_2t_g"],
+      "clinical_note": "Margarina hidrogenada lidera com 9,99g/100g. Biscoitos wafer e empadas aparecem em seguida — alimentos ultraprocessados dominam o ranking.",
+      "sql_reference": "SELECT f.food_name, SUM(fv.value) AS total_trans_g, 'g' AS unit FROM fact_nutrient_values fv JOIN dim_food f ON fv.food_id = f.food_id JOIN dim_nutrient n ON fv.nutrient_id = n.nutrient_id WHERE n.nutrient_name IN ('ag_18_1t_g', 'ag_18_2t_g') AND fv.value IS NOT NULL GROUP BY f.food_name ORDER BY total_trans_g DESC LIMIT 10"
+    },
+    {
+      "id": "Q013",
+      "question": "Quais alimentos com maior teor de ômega-6?",
+      "difficulty": "simple_filter",
+      "tags": ["omega6", "ag_poliinsaturados_g", "proxy", "ranking"],
+      "clinical_note": "NOTA TÉCNICA: ag_poliinsaturados_g é proxy — inclui ômega-6 e ômega-3 juntos. A TACO não desagrega o ácido linoleico (LA) individualmente. Óleo de girassol lidera com 62,6g/100g.",
+      "sql_reference": "SELECT f.food_name, fv.value, n.unit FROM fact_nutrient_values fv JOIN dim_food f ON fv.food_id = f.food_id JOIN dim_nutrient n ON fv.nutrient_id = n.nutrient_id WHERE n.nutrient_name = 'ag_poliinsaturados_g' AND fv.value IS NOT NULL ORDER BY fv.value DESC LIMIT 10"
+    },
+    {
+      "id": "Q014",
+      "question": "Quais carnes mais gordurosas?",
+      "difficulty": "join_group",
+      "tags": ["lipideos", "carnes", "JOIN grupo", "ranking"],
+      "clinical_note": "Toucinho frito lidera com 64g de gordura/100g. Costela bovina crua com 31,7g — relevante para orientação de cortes em dietas com restrição lipídica.",
+      "sql_reference": "SELECT f.food_name, fv.value, n.unit FROM fact_nutrient_values fv JOIN dim_food f ON fv.food_id = f.food_id JOIN dim_food_group fg ON f.food_group_id = fg.food_group_id JOIN dim_nutrient n ON fv.nutrient_id = n.nutrient_id WHERE n.nutrient_name = 'lipideos_g' AND fg.food_group_name = 'Carnes e derivados' AND fv.value IS NOT NULL ORDER BY fv.value DESC LIMIT 10"
+    },
+    {
+      "id": "Q015",
+      "question": "Quais proteínas vegetais possuem maiores aminoácidos essenciais?",
+      "difficulty": "aggregation",
+      "tags": ["aminoacidos", "SUM", "dados insuficientes", "regra 11"],
+      "clinical_note": "LIMITAÇÃO DE DADOS: A TACO 4ª ed. possui dados de aminoácidos para apenas 26 alimentos. Nos grupos vegetais apenas pé-de-moleque e pastel de carne têm registro — resultado insuficiente para ranking clínico confiável. Agente deve aplicar regra 11.",
+      "expected_behavior": "regra_11_dados_insuficientes",
+      "sql_reference": "SELECT f.food_name, fg.food_group_name, SUM(fv.value) AS total_aa_essenciais_g, 'g' AS unit FROM fact_nutrient_values fv JOIN dim_food f ON fv.food_id = f.food_id JOIN dim_food_group fg ON f.food_group_id = fg.food_group_id JOIN dim_nutrient n ON fv.nutrient_id = n.nutrient_id WHERE n.nutrient_name IN ('aa_isoleucina_g','aa_leucina_g','aa_lisina_g','aa_metionina_g','aa_fenilalanina_g','aa_treonina_g','aa_triptofano_g','aa_valina_g','aa_histidina_g') AND fg.food_group_name IN ('Leguminosas e derivados','Nozes e sementes','Cereais e derivados') AND fv.value IS NOT NULL GROUP BY f.food_name, fg.food_group_name ORDER BY total_aa_essenciais_g DESC LIMIT 10"
+    },
+    {
+      "id": "Q016",
+      "question": "Quais proteínas vegetais possuem menor teor de proteína em 100g?",
+      "difficulty": "join_group",
+      "tags": ["proteina", "vegetais", "ASC", "JOIN grupo"],
+      "clinical_note": "Amido de milho lidera com 0,6g/100g — esperado, é quase carboidrato puro.",
+      "sql_reference": "SELECT f.food_name, fg.food_group_name, fv.value, n.unit FROM fact_nutrient_values fv JOIN dim_food f ON fv.food_id = f.food_id JOIN dim_food_group fg ON f.food_group_id = fg.food_group_id JOIN dim_nutrient n ON fv.nutrient_id = n.nutrient_id WHERE n.nutrient_name = 'proteina_g' AND fg.food_group_name IN ('Leguminosas e derivados','Nozes e sementes','Cereais e derivados') AND fv.value IS NOT NULL AND fv.value > 0 ORDER BY fv.value ASC LIMIT 10"
+    },
+    {
+      "id": "Q017",
+      "question": "Quais proteínas vegetais possuem maior teor de proteína e baixo teor de carboidrato?",
+      "difficulty": "aggregation",
+      "tags": ["proteina", "carboidrato", "CTE dupla", "dois nutrientes cruzados"],
+      "clinical_note": "Amendoim torrado é o melhor custo-benefício prático: 22g proteína / 18g carbo. Soja farinha tem mais proteína (36g) mas também mais carbo (38g).",
+      "sql_reference": "WITH proteina AS (SELECT fv.food_id, fv.value AS proteina_g FROM fact_nutrient_values fv JOIN dim_nutrient n ON fv.nutrient_id = n.nutrient_id WHERE n.nutrient_name = 'proteina_g'), carbo AS (SELECT fv.food_id, fv.value AS carbo_g FROM fact_nutrient_values fv JOIN dim_nutrient n ON fv.nutrient_id = n.nutrient_id WHERE n.nutrient_name = 'carboidrato_g') SELECT f.food_name, fg.food_group_name, p.proteina_g, c.carbo_g FROM proteina p JOIN carbo c ON p.food_id = c.food_id JOIN dim_food f ON p.food_id = f.food_id JOIN dim_food_group fg ON f.food_group_id = fg.food_group_id WHERE fg.food_group_name IN ('Leguminosas e derivados','Nozes e sementes','Cereais e derivados') AND p.proteina_g IS NOT NULL AND c.carbo_g IS NOT NULL ORDER BY p.proteina_g DESC, c.carbo_g ASC LIMIT 10"
+    },
+    {
+      "id": "Q018",
+      "question": "Quais alimentos possuem maior quantidade de leucina?",
+      "difficulty": "simple_filter",
+      "tags": ["leucina", "aminoacido", "dados insuficientes", "regra 11"],
+      "clinical_note": "LIMITAÇÃO DE DADOS: Dados de aminoácidos cobrem apenas 26 alimentos na TACO 4ª ed. Resultado dominado por queijos e embutidos — insuficiente para representar o universo de alimentos.",
+      "expected_behavior": "regra_11_dados_insuficientes",
+      "sql_reference": "SELECT f.food_name, fv.value, n.unit FROM fact_nutrient_values fv JOIN dim_food f ON fv.food_id = f.food_id JOIN dim_nutrient n ON fv.nutrient_id = n.nutrient_id WHERE n.nutrient_name = 'aa_leucina_g' AND fv.value IS NOT NULL ORDER BY fv.value DESC LIMIT 10"
+    },
+    {
+      "id": "Q019",
+      "question": "Quais proteínas de fonte vegetal possuem maior teor de leucina?",
+      "difficulty": "join_group",
+      "tags": ["leucina", "vegetais", "dados insuficientes", "regra 11"],
+      "clinical_note": "LIMITAÇÃO DE DADOS: Apenas 2 alimentos vegetais com dado de leucina no banco. Agente deve aplicar regra 11.",
+      "expected_behavior": "regra_11_dados_insuficientes",
+      "sql_reference": "SELECT f.food_name, fg.food_group_name, fv.value, n.unit FROM fact_nutrient_values fv JOIN dim_food f ON fv.food_id = f.food_id JOIN dim_food_group fg ON f.food_group_id = fg.food_group_id JOIN dim_nutrient n ON fv.nutrient_id = n.nutrient_id WHERE n.nutrient_name = 'aa_leucina_g' AND fg.food_group_name IN ('Leguminosas e derivados','Nozes e sementes','Cereais e derivados') AND fv.value IS NOT NULL ORDER BY fv.value DESC LIMIT 10"
+    },
+    {
+      "id": "Q020",
+      "question": "Quais alimentos são mais calóricos e possuem maior quantidade de gordura?",
+      "difficulty": "aggregation",
+      "tags": ["energia_kcal", "lipideos", "CTE dupla", "dois nutrientes cruzados"],
+      "clinical_note": "Óleos dominam com 884 kcal e 100g de gordura/100g — esperado. Manteiga aparece em seguida. Clinicamente relevante para orientação de uso de gorduras em dietas hipocalóricas.",
+      "sql_reference": "WITH calorias AS (SELECT fv.food_id, fv.value AS kcal FROM fact_nutrient_values fv JOIN dim_nutrient n ON fv.nutrient_id = n.nutrient_id WHERE n.nutrient_name = 'energia_kcal'), gordura AS (SELECT fv.food_id, fv.value AS lipideos_g FROM fact_nutrient_values fv JOIN dim_nutrient n ON fv.nutrient_id = n.nutrient_id WHERE n.nutrient_name = 'lipideos_g') SELECT f.food_name, c.kcal, g.lipideos_g FROM calorias c JOIN gordura g ON c.food_id = g.food_id JOIN dim_food f ON c.food_id = f.food_id WHERE c.kcal IS NOT NULL AND g.lipideos_g IS NOT NULL ORDER BY c.kcal DESC, g.lipideos_g DESC LIMIT 10"
+    },
+    {
+      "id": "Q021",
+      "question": "Quais alimentos menos calóricos?",
+      "difficulty": "ambiguous",
+      "tags": ["energia_kcal", "ASC", "armadilha bebidas", "sem filtro grupo"],
+      "clinical_note": "ARMADILHA CLÍNICA: Sem filtro de grupo, o ranking é dominado por chás e infusões (1-3 kcal/100g). Se o paciente quer saber quais alimentos sólidos comer para emagrecer, a resposta é enganosa. O agente deveria perguntar se o usuário quer incluir bebidas ou focar em alimentos sólidos.",
+      "sql_reference": "SELECT f.food_name, fv.value, n.unit FROM fact_nutrient_values fv JOIN dim_food f ON fv.food_id = f.food_id JOIN dim_nutrient n ON fv.nutrient_id = n.nutrient_id WHERE n.nutrient_name = 'energia_kcal' AND fv.value IS NOT NULL AND fv.value > 0 ORDER BY fv.value ASC LIMIT 10"
+    }
+  ]
+}

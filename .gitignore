@@ -1,0 +1,27 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+
+# Segredos / ambiente
+.env
+.env.*
+*.key
+
+# Artefatos de dados (regeneráveis pela pipeline)
+db/*.duckdb
+db/*.duckdb.wal
+
+# dbt
+nutriquery_dbt/target/
+nutriquery_dbt/dbt_packages/
+nutriquery_dbt/logs/
+
+# Dagster
+.dagster/
+dagster_home/
+
+# OS
+.DS_Store

@@ -1,0 +1,233 @@
+{
+  "run_at": "2026-06-28T09:31:26.642220",
+  "total": 21,
+  "passed": 5,
+  "accuracy": 0.2381,
+  "by_difficulty": {
+    "simple_filter": {
+      "total": 5,
+      "passed": 3
+    },
+    "join_group": {
+      "total": 6,
+      "passed": 1
+    },
+    "aggregation": {
+      "total": 5,
+      "passed": 1
+    },
+    "ambiguous": {
+      "total": 5,
+      "passed": 0
+    }
+  },
+  "details": [
+    {
+      "id": "Q001",
+      "difficulty": "simple_filter",
+      "question": "Quanto de ferro tem o fígado?",
+      "status": "pass",
+      "passed": true,
+      "sql_gerado": "SELECT f.food_name, fv.value AS ferro_mg, n.unit \nFROM fact_nutrient_values fv \nJOIN dim_food f ON fv.food_id = f.food_id \nJOIN dim_nutrient n ON fv.nutrient_id = n.nutrient_id \nWHERE f.food_name ILIKE '%fígado%' \n  AND n.nutrient_name = 'ferro_mg' \nORDER BY f.food_name;",
+      "rows_ref": 3,
+      "rows_agent": 3,
+      "motivo": "exact match numérico"
+    },
+    {
+      "id": "Q002",
+      "difficulty": "join_group",
+      "question": "Qual fruta tem maior teor de vitamina C?",
+      "status": "pass",
+      "passed": true,
+      "sql_gerado": "SELECT f.food_name, fv.value AS vitamina_c_mg\nFROM fact_nutrient_values fv\nJOIN dim_food f ON fv.food_id = f.food_id\nJOIN dim_nutrient n ON fv.nutrient_id = n.nutrient_id\nJOIN dim_food_group g ON f.food_group_id = g.food_group_id\nWHERE g.food_group_name ILIKE '%frutas%'\n  AND n.nutrient_name = 'vitamina_c_mg'\n  AND fv.value IS NOT NULL\nORDER BY fv.value DESC\nLIMIT 10;",
+      "rows_ref": 10,
+      "rows_agent": 10,
+      "motivo": "exact match numérico"
+    },
+    {
+      "id": "Q003",
+      "difficulty": "aggregation",
+      "question": "Qual grupo alimentar tem maior quantidade de cálcio?",
+      "status": "fail",
+      "passed": false,
+      "sql_gerado": "SELECT \n    g.food_group_name, \n    SUM(fv.value) AS total_calcio_mg\nFROM \n    fact_nutrient_values fv\nJOIN \n    dim_food f ON fv.food_id = f.food_id\nJOIN \n    dim_nutrient n ON fv.nutrient_id = n.nutrient_id\nJOIN \n    dim_food_group g ON f.food_group_id = g.food_group_id\nWHERE \n    n.nutrient_name = 'calcio_mg'\n    AND fv.value IS NOT NULL\nGROUP BY \n    g.food_group_name\nORDER BY \n    total_calcio_mg DESC\nLIMIT 10;",
+      "rows_ref": 15,
+      "rows_agent": 10,
+      "motivo": "food_name overlap baixo: 67% (10/15)"
+    },
+    {
+      "id": "Q004",
+      "difficulty": "join_group",
+      "question": "Qual semente tem maior cálcio em comparação com o leite e derivados?",
+      "status": "fail",
+      "passed": false,
+      "sql_gerado": "SELECT \n    f.food_name, \n    fv.value AS calcio_mg\nFROM \n    fact_nutrient_values fv\nJOIN \n    dim_food f ON fv.food_id = f.food_id\nJOIN \n    dim_nutrient n ON fv.nutrient_id = n.nutrient_id\nWHERE \n    n.nutrient_name = 'calcio_mg'\n    AND (f.food_name ILIKE '%semente%' OR f.food_name ILIKE '%noz%')\n    AND fv.value IS NOT NULL\nORDER BY \n    fv.value DESC\nLIMIT 10;\n\nSELECT \n    f.food_name, \n    fv.value AS calcio_mg\nFROM \n    fact_nutrient_values fv\nJOIN \n    dim_food f ON fv.food_id = f.food_id\nJOIN \n    dim_nutrient n ON fv.nutrient_id = n.nutrient_id\nJOIN \n    dim_food_group g ON f.food_group_id = g.food_group_id\nWHERE \n    n.nutrient_name = 'calcio_mg'\n    AND g.food_group_name ILIKE '%leite%'\n    AND fv.value IS NOT NULL\nORDER BY \n    fv.value DESC\nLIMIT 10;",
+      "rows_ref": 35,
+      "rows_agent": 10,
+      "motivo": "food_name overlap baixo: 29% (10/35)"
+    },
+    {
+      "id": "Q005",
+      "difficulty": "aggregation",
+      "question": "Qual alimento mais calórico de cada grupo?",
+      "status": "pass",
+      "passed": true,
+      "sql_gerado": "WITH ranked_foods AS (\n  SELECT \n    g.food_group_name,\n    f.food_name,\n    fv.value AS energia_kcal,\n    ROW_NUMBER() OVER (PARTITION BY g.food_group_name ORDER BY fv.value DESC) AS row_num\n  FROM fact_nutrient_values fv\n  JOIN dim_food f ON fv.food_id = f.food_id\n  JOIN dim_food_group g ON f.food_group_id = g.food_group_id\n  JOIN dim_nutrient n ON fv.nutrient_id = n.nutrient_id\n  WHERE n.nutrient_name = 'energia_kcal'\n    AND fv.value IS NOT NULL\n)\nSELECT food_group_name, food_name, energia_kcal\nFROM ranked_foods\nWHERE row_num = 1\nORDER BY energia_kcal DESC;",
+      "rows_ref": 22,
+      "rows_agent": 15,
+      "motivo": "subset match numérico"
+    },
+    {
+      "id": "Q006",
+      "difficulty": "ambiguous",
+      "question": "Qual alimento mais pobre em vitamina B1?",
+      "status": "fail",
+      "passed": false,
+      "sql_gerado": "SELECT f.food_name, fv.value AS tiamina_mg, n.unit\nFROM fact_nutrient_values fv\nJOIN dim_food f ON fv.food_id = f.food_id\nJOIN dim_nutrient n ON fv.nutrient_id = n.nutrient_id\nWHERE n.nutrient_name = 'tiamina_mg'\n  AND fv.value IS NOT NULL\nORDER BY fv.value ASC\nLIMIT 10;",
+      "rows_ref": 10,
+      "rows_agent": 10,
+      "motivo": "food_name overlap baixo: 0% (0/10)"
+    },
+    {
+      "id": "Q007",
+      "difficulty": "ambiguous",
+      "question": "Qual alimento tem melhor fonte de ômega-3?",
+      "status": "fail",
+      "passed": false,
+      "sql_gerado": "SELECT f.food_name, fv.value AS ag_18_3_n3_g, n.unit\nFROM fact_nutrient_values fv\nJOIN dim_food f ON fv.food_id = f.food_id\nJOIN dim_nutrient n ON fv.nutrient_id = n.nutrient_id\nWHERE n.nutrient_name IN ('ag_18_3_n3_g', 'ag_20_5_g', 'ag_22_6_g')\n  AND fv.value IS NOT NULL\n  AND fv.value > 0\nORDER BY fv.value DESC\nLIMIT 10;",
+      "rows_ref": 10,
+      "rows_agent": 10,
+      "motivo": "food_name overlap baixo: 70% (7/10)"
+    },
+    {
+      "id": "Q008",
+      "difficulty": "simple_filter",
+      "question": "Qual alimento tem maior teor de zinco?",
+      "status": "pass",
+      "passed": true,
+      "sql_gerado": "SELECT f.food_name, fv.value AS zinco_mg, n.unit\nFROM fact_nutrient_values fv\nJOIN dim_food f ON fv.food_id = f.food_id\nJOIN dim_nutrient n ON fv.nutrient_id = n.nutrient_id\nWHERE n.nutrient_name = 'zinco_mg'\n  AND fv.value IS NOT NULL\nORDER BY fv.value DESC\nLIMIT 10;",
+      "rows_ref": 10,
+      "rows_agent": 10,
+      "motivo": "exact match numérico"
+    },
+    {
+      "id": "Q009",
+      "difficulty": "ambiguous",
+      "question": "Qual alimento é mais pobre em vitamina B3?",
+      "status": "fail",
+      "passed": false,
+      "sql_gerado": "SELECT f.food_name, fv.value AS niacina_mg, n.unit\nFROM fact_nutrient_values fv\nJOIN dim_food f ON fv.food_id = f.food_id\nJOIN dim_nutrient n ON fv.nutrient_id = n.nutrient_id\nWHERE n.nutrient_name = 'niacina_mg'\n  AND fv.value IS NOT NULL\nORDER BY fv.value ASC\nLIMIT 10;",
+      "rows_ref": 10,
+      "rows_agent": 10,
+      "motivo": "food_name overlap baixo: 0% (0/10)"
+    },
+    {
+      "id": "Q010",
+      "difficulty": "ambiguous",
+      "question": "Quantos alimentos não possuem vitamina D?",
+      "status": "regra11_fail",
+      "passed": false,
+      "sql_gerado": "SELECT COUNT(DISTINCT f.food_id) \nFROM dim_food f \nWHERE f.food_id NOT IN (\n  SELECT fv.food_id \n  FROM fact_nutrient_values fv \n  JOIN dim_nutrient n ON fv.nutrient_id = n.nutrient_id \n  WHERE n.nutrient_name = 'vitamina_d_mcg' \n    AND fv.value IS NOT NULL \n    AND fv.value > 0\n)",
+      "resposta_preview": "De acordo com a Tabela Brasileira de Composição de Alimentos (TACO), existem 597 alimentos que não possuem vitamina D registrada em sua composição nutricional por 100g do alimento. Isso significa que, para esses alimentos, não há valor disponível de vitamina D (em microgramas, mcg) por 100g do alime"
+    },
+    {
+      "id": "Q011",
+      "difficulty": "simple_filter",
+      "question": "Quais alimentos possuem maior quantidade de vitamina D?",
+      "status": "regra11_ok",
+      "passed": true,
+      "sql_gerado": "SELECT f.food_name, fv.value, n.unit\nFROM fact_nutrient_values fv\nJOIN dim_food f ON fv.food_id = f.food_id\nJOIN dim_nutrient n ON fv.nutrient_id = n.nutrient_id\nWHERE n.nutrient_name = 'vitamina_d_mcg'\n  AND fv.value IS NOT NULL\n  AND fv.value > 0\nORDER BY fv.value DESC\nLIMIT 10;",
+      "resposta_preview": "⚠️ Dados contidos na tabela TACO insuficientes ou o alimento não apresenta quantidade significativa de vitamina D registrada na base.\n\nA TACO 4ª edição não possui dados de vitamina D para a maioria dos alimentos, o que limita a capacidade de fornecer uma lista de alimentos com maior quantidade de vi"
+    },
+    {
+      "id": "Q012",
+      "difficulty": "join_group",
+      "question": "Quais alimentos mais ricos em gordura trans?",
+      "status": "agent_error",
+      "passed": false,
+      "sql_gerado": "",
+      "error": "Error code: 429 - {'error': {'message': 'Rate limit reached for model `llama-3.3-70b-versatile` in organization `org_01kw729b67edqrgrk0xxgzwmwa` service tier `on_demand` on tokens per day (TPD): Limit 100000, Used 97549, Requested 4194. Please try again in 25m5.952s. Need more tokens? Upgrade to Dev Tier today at https://console.groq.com/settings/billing', 'type': 'tokens', 'code': 'rate_limit_exceeded'}}"
+    },
+    {
+      "id": "Q013",
+      "difficulty": "simple_filter",
+      "question": "Quais alimentos com maior teor de ômega-6?",
+      "status": "agent_error",
+      "passed": false,
+      "sql_gerado": "",
+      "error": "Error code: 429 - {'error': {'message': 'Rate limit reached for model `llama-3.3-70b-versatile` in organization `org_01kw729b67edqrgrk0xxgzwmwa` service tier `on_demand` on tokens per day (TPD): Limit 100000, Used 97532, Requested 3728. Please try again in 18m8.64s. Need more tokens? Upgrade to Dev Tier today at https://console.groq.com/settings/billing', 'type': 'tokens', 'code': 'rate_limit_exceeded'}}"
+    },
+    {
+      "id": "Q014",
+      "difficulty": "join_group",
+      "question": "Quais carnes mais gordurosas?",
+      "status": "agent_error",
+      "passed": false,
+      "sql_gerado": "",
+      "error": "Error code: 429 - {'error': {'message': 'Rate limit reached for model `llama-3.3-70b-versatile` in organization `org_01kw729b67edqrgrk0xxgzwmwa` service tier `on_demand` on tokens per day (TPD): Limit 100000, Used 97514, Requested 3725. Please try again in 17m50.496s. Need more tokens? Upgrade to Dev Tier today at https://console.groq.com/settings/billing', 'type': 'tokens', 'code': 'rate_limit_exceeded'}}"
+    },
+    {
+      "id": "Q015",
+      "difficulty": "aggregation",
+      "question": "Quais proteínas vegetais possuem maiores aminoácidos essenciais?",
+      "status": "agent_error",
+      "passed": false,
+      "sql_gerado": "",
+      "error": "Error code: 429 - {'error': {'message': 'Rate limit reached for model `llama-3.3-70b-versatile` in organization `org_01kw729b67edqrgrk0xxgzwmwa` service tier `on_demand` on tokens per day (TPD): Limit 100000, Used 97497, Requested 3734. Please try again in 17m43.584s. Need more tokens? Upgrade to Dev Tier today at https://console.groq.com/settings/billing', 'type': 'tokens', 'code': 'rate_limit_exceeded'}}"
+    },
+    {
+      "id": "Q016",
+      "difficulty": "join_group",
+      "question": "Quais proteínas vegetais possuem menor teor de proteína em 100g?",
+      "status": "agent_error",
+      "passed": false,
+      "sql_gerado": "",
+      "error": "Error code: 429 - {'error': {'message': 'Rate limit reached for model `llama-3.3-70b-versatile` in organization `org_01kw729b67edqrgrk0xxgzwmwa` service tier `on_demand` on tokens per day (TPD): Limit 100000, Used 97479, Requested 3670. Please try again in 16m32.736s. Need more tokens? Upgrade to Dev Tier today at https://console.groq.com/settings/billing', 'type': 'tokens', 'code': 'rate_limit_exceeded'}}"
+    },
+    {
+      "id": "Q017",
+      "difficulty": "aggregation",
+      "question": "Quais proteínas vegetais possuem maior teor de proteína e baixo teor de carboidrato?",
+      "status": "agent_error",
+      "passed": false,
+      "sql_gerado": "",
+      "error": "Error code: 429 - {'error': {'message': 'Rate limit reached for model `llama-3.3-70b-versatile` in organization `org_01kw729b67edqrgrk0xxgzwmwa` service tier `on_demand` on tokens per day (TPD): Limit 100000, Used 97462, Requested 3740. Please try again in 17m18.528s. Need more tokens? Upgrade to Dev Tier today at https://console.groq.com/settings/billing', 'type': 'tokens', 'code': 'rate_limit_exceeded'}}"
+    },
+    {
+      "id": "Q018",
+      "difficulty": "simple_filter",
+      "question": "Quais alimentos possuem maior quantidade de leucina?",
+      "status": "agent_error",
+      "passed": false,
+      "sql_gerado": "",
+      "error": "Error code: 429 - {'error': {'message': 'Rate limit reached for model `llama-3.3-70b-versatile` in organization `org_01kw729b67edqrgrk0xxgzwmwa` service tier `on_demand` on tokens per day (TPD): Limit 100000, Used 97445, Requested 3728. Please try again in 16m53.472s. Need more tokens? Upgrade to Dev Tier today at https://console.groq.com/settings/billing', 'type': 'tokens', 'code': 'rate_limit_exceeded'}}"
+    },
+    {
+      "id": "Q019",
+      "difficulty": "join_group",
+      "question": "Quais proteínas de fonte vegetal possuem maior teor de leucina?",
+      "status": "agent_error",
+      "passed": false,
+      "sql_gerado": "",
+      "error": "Error code: 429 - {'error': {'message': 'Rate limit reached for model `llama-3.3-70b-versatile` in organization `org_01kw729b67edqrgrk0xxgzwmwa` service tier `on_demand` on tokens per day (TPD): Limit 100000, Used 97427, Requested 3735. Please try again in 16m43.968s. Need more tokens? Upgrade to Dev Tier today at https://console.groq.com/settings/billing', 'type': 'tokens', 'code': 'rate_limit_exceeded'}}"
+    },
+    {
+      "id": "Q020",
+      "difficulty": "aggregation",
+      "question": "Quais alimentos são mais calóricos e possuem maior quantidade de gordura?",
+      "status": "agent_error",
+      "passed": false,
+      "sql_gerado": "",
+      "error": "Error code: 429 - {'error': {'message': 'Rate limit reached for model `llama-3.3-70b-versatile` in organization `org_01kw729b67edqrgrk0xxgzwmwa` service tier `on_demand` on tokens per day (TPD): Limit 100000, Used 97410, Requested 3669. Please try again in 15m32.256s. Need more tokens? Upgrade to Dev Tier today at https://console.groq.com/settings/billing', 'type': 'tokens', 'code': 'rate_limit_exceeded'}}"
+    },
+    {
+      "id": "Q021",
+      "difficulty": "ambiguous",
+      "question": "Quais alimentos menos calóricos?",
+      "status": "agent_error",
+      "passed": false,
+      "sql_gerado": "",
+      "error": "Error code: 429 - {'error': {'message': 'Rate limit reached for model `llama-3.3-70b-versatile` in organization `org_01kw729b67edqrgrk0xxgzwmwa` service tier `on_demand` on tokens per day (TPD): Limit 100000, Used 97392, Requested 3725. Please try again in 16m5.088s. Need more tokens? Upgrade to Dev Tier today at https://console.groq.com/settings/billing', 'type': 'tokens', 'code': 'rate_limit_exceeded'}}"
+    }
+  ]
+}

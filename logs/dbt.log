@@ -1,0 +1,31 @@
+[0m17:56:22.089531 [debug] [MainThread]: Sending event: {'category': 'dbt', 'action': 'invocation', 'label': 'start', 'context': [<snowplow_tracker.self_describing_json.SelfDescribingJson object at 0x784bbe46f0b0>, <snowplow_tracker.self_describing_json.SelfDescribingJson object at 0x784bbf62caa0>, <snowplow_tracker.self_describing_json.SelfDescribingJson object at 0x784bbd5e2120>]}
+
+
+============================== 17:56:22.097109 | 6bc6e44c-0796-4f17-a568-84861c3aa11e ==============================
+[0m17:56:22.097109 [info ] [MainThread]: Running with dbt=1.11.11
+[0m17:56:22.097565 [debug] [MainThread]: running dbt with arguments {'send_anonymous_usage_stats': 'True', 'partial_parse': 'True', 'version_check': 'True', 'log_path': 'logs', 'indirect_selection': 'eager', 'use_experimental_parser': 'False', 'fail_fast': 'False', 'warn_error': 'None', 'warn_error_options': 'WarnErrorOptionsV2(error=[], warn=[], silence=[])', 'quiet': 'False', 'target_path': 'None', 'static_parser': 'True', 'use_colors': 'True', 'cache_selected_only': 'False', 'profiles_dir': '/home/wsl/.dbt', 'log_cache_events': 'False', 'printer_width': '80', 'log_format': 'default', 'introspect': 'True', 'debug': 'False', 'write_json': 'True', 'invocation_command': 'dbt init nutriquery_dbt', 'empty': 'None', 'no_print': 'None'}
+[0m17:56:22.114331 [info ] [MainThread]: Creating dbt configuration folder at /home/wsl/.dbt
+[0m17:56:22.117577 [debug] [MainThread]: Starter project path: /home/wsl/nutriquery/.venv/lib/python3.12/site-packages/dbt/include/starter_project
+[0m17:56:22.126742 [info ] [MainThread]: 
+Your new dbt project "nutriquery_dbt" was created!
+
+For more information on how to configure the profiles.yml file,
+please consult the dbt documentation here:
+
+  https://docs.getdbt.com/docs/configure-your-profile
+
+One more thing:
+
+Need help? Don't hesitate to reach out to us via GitHub issues or on Slack:
+
+  https://community.getdbt.com/
+
+Happy modeling!
+
+[0m17:56:22.127152 [info ] [MainThread]: Setting up your profile.
+[0m17:57:14.803113 [info ] [MainThread]: Profile nutriquery_dbt written to /home/wsl/.dbt/profiles.yml using target's sample configuration. Once updated, you'll be able to start developing with dbt.
+[0m17:57:14.805626 [debug] [MainThread]: Resource report: {"command_name": "init", "command_success": true, "command_wall_clock_time": 52.77089, "process_in_blocks": "219448", "process_kernel_time": 0.238722, "process_mem_max_rss": "136412", "process_out_blocks": "80", "process_user_time": 1.140106}
+[0m17:57:14.806023 [debug] [MainThread]: Command `dbt init` succeeded at 17:57:14.805933 after 52.77 seconds
+[0m17:57:14.806354 [debug] [MainThread]: Sending event: {'category': 'dbt', 'action': 'invocation', 'label': 'end', 'context': [<snowplow_tracker.self_describing_json.SelfDescribingJson object at 0x784bbcde2c00>, <snowplow_tracker.self_describing_json.SelfDescribingJson object at 0x784bbcb75af0>, <snowplow_tracker.self_describing_json.SelfDescribingJson object at 0x784bbcc6e060>]}
+[0m17:57:14.806677 [debug] [MainThread]: Flushing usage events
+[0m17:57:15.350405 [debug] [MainThread]: An error was encountered while trying to flush usage events
