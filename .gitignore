@@ -8,6 +8,7 @@ venv/
 *.key
 db/*.duckdb
 db/*.duckdb.wal
+db/checkpoints.sqlite
 nutriquery_dbt/target/
 nutriquery_dbt/dbt_packages/
 nutriquery_dbt/logs/

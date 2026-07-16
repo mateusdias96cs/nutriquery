@@ -13,7 +13,7 @@ from pathlib import Path
 from datetime import datetime
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
-from agent import agent
+from agent import agent_stateless, agent_sql_only
 
 DATASET_PATH   = Path(__file__).parent / "gold_dataset.json"
 RESULTS_DIR    = Path(__file__).parent / "gold_results"
@@ -122,14 +122,20 @@ def run_eval(q: dict, conn) -> dict:
     print(f"\n{'─'*60}")
     print(f"[{qid}] {question}")
 
+    # Só as perguntas de regra 11 avaliam a resposta em prosa; as demais são
+    # julgadas reexecutando o SQL, então pulam o nó `respond`.
+    needs_prose = behavior == "regra_11_dados_insuficientes"
+    graph = agent_stateless if needs_prose else agent_sql_only
+
     try:
-        result = agent.invoke({
+        result = graph.invoke({
+            "messages": [{"role": "user", "content": question}],
             "question": question,
             "sql": None, "result": None,
             "error": None, "attempts": 0
         })
         sql_gerado = result.get("sql", "")
-        resposta   = result.get("result", "")
+        resposta   = result.get("result", "") if needs_prose else ""
     except Exception as e:
         print(f"  ❌ ERRO no agente: {e}")
         return {"id": qid, "difficulty": diff, "question": question,

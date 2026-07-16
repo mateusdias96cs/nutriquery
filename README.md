@@ -28,6 +28,7 @@ The project also demonstrates a complete **modern data stack**, end to end:
 ```
 TACO Excel → medallion ELT (bronze → silver → gold) → tested dbt models
            → orchestrated by Dagster → queried by a LangGraph Text-to-SQL agent
+             (multi-turn, checkpointed to SQLite)
            → measured by a custom execution-accuracy eval harness
 ```
 
@@ -109,9 +110,32 @@ Design decisions:
 - **LLM:** Groq free tier, `llama-3.3-70b-versatile`, `temperature=0`.
 - **Read-only guardrail:** the agent's DuckDB connection is `read_only=True`; it can never modify the warehouse.
 - **Self-correction:** on a SQL error, the message is injected back into the prompt and the agent retries (up to 3 attempts).
-- **Schema-aware system prompt:** a 12-rule prompt encodes table/column descriptions, synonym mappings, `NULL`-semantics, and accent-sensitivity (DuckDB's `ILIKE` distinguishes `fígado` from `figado`).
+- **Rate-limit backoff:** the free tier's 429s are retried with exponential backoff, honouring the wait Groq suggests in the error body.
+- **Schema-aware system prompt:** an 11-rule prompt encodes table/column descriptions, synonym mappings, `NULL`-semantics and ranking rules (a food with `0` is not "poor" in a nutrient, it simply lacks it, so inverse rankings filter `value > 0`).
+- **Accents solved in the data layer, not the prompt:** DuckDB's `ILIKE` is accent-sensitive (`fígado` ≠ `figado`). Rather than asking the LLM to spell Portuguese correctly, the gold dimensions carry `*_normalized` columns (`strip_accents(lower(...))`) that the agent filters on, while the accented column is what gets displayed.
 
 *Proves: agentic tool use, structured output, error handling.*
+
+---
+
+## Conversational memory (Layer 3.5)
+
+The agent is multi-turn. A follow-up with no subject resolves against the conversation:
+
+```
+> quanto de proteína tem o frango grelhado?
+  → WHERE f.food_name_normalized LIKE '%frango%grelhado%' ... 'proteina_g'
+> e de gordura?
+  → WHERE f.food_name_normalized LIKE '%frango%grelhado%' ... 'lipideos_g'
+```
+
+- **Checkpointing:** LangGraph `SqliteSaver` writes every turn to `db/checkpoints.sqlite`, keyed by `thread_id`. Conversations survive a restart; resume one with `python3 agent.py --thread <id>`.
+- **What gets carried:** each assistant turn stores the SQL that produced it. That SQL, not the prose, is what a follow-up inherits its filters from, because it delimits the food exactly (`%frango%grelhado%`) where prose leaves qualifiers ambiguous.
+- **Sliding window:** the checkpoint keeps the whole conversation, but only the last 3 turns enter the prompt. Persistence is complete; context stays bounded.
+- **History goes in as text, not as a message replay:** the system prompt is a few-shot of bare SQL, so replaying prose assistant turns into the SQL-generation step would teach the model to answer in prose exactly where SQL is wanted.
+- **Per-turn state is reset explicitly.** With a checkpointer the previous turn's state persists on the thread: a stale `error` would push a fresh question into the self-correction branch, and an accumulated `attempts` would send it straight to failure. The eval harness compiles the same graph *without* a checkpointer, since cross-question memory there would be contamination.
+
+*Proves: stateful agents, persistence, context engineering.*
 
 ---
 
@@ -148,11 +172,12 @@ Five questions deliberately have **no reference result**: their correct behavior
 nutriquery/
 ├── data/raw/taco.xlsx          # source (TACO 4th ed.)
 ├── db/nutriquery.duckdb        # warehouse (regenerable from the pipeline)
+├── db/checkpoints.sqlite       # saved conversations (created on first run)
 ├── ingest_taco.py              # bronze ingestion (main composition)
 ├── ingest_taco_ag.py           # bronze ingestion (fatty acids)
 ├── ingest_taco_aa.py           # bronze ingestion (amino acids)
-├── prompt.py                   # SYSTEM_PROMPT (12 rules)
-├── agent.py                    # LangGraph Text-to-SQL agent
+├── prompt.py                   # SYSTEM_PROMPT (11 rules) + RESPONSE_PROMPT
+├── agent.py                    # LangGraph Text-to-SQL agent (+ checkpointing)
 ├── orchestration/
 │   ├── assets.py
 │   └── definitions.py          # Dagster definitions
@@ -191,10 +216,14 @@ echo "GROQ_API_KEY=your_key_here" > .env
 python3 ingest_taco.py && python3 ingest_taco_ag.py && python3 ingest_taco_aa.py
 cd nutriquery_dbt && dbt build && cd ..
 
-# 5. Talk to the agent
+# 5. Talk to the agent  (prints a thread id you can resume later)
 python3 agent.py
 #   > quanto de proteína tem o frango grelhado?
+#   > e de gordura?          (follow-up: resolves against the conversation)
 #   > sair  (to exit)
+
+# 5b. Resume a saved conversation
+python3 agent.py --thread cli-a3f9c1
 
 # 6. (optional) Inspect orchestration
 dagster dev -m orchestration.definitions   # UI at http://127.0.0.1:3000
@@ -220,7 +249,7 @@ These are surfaced honestly by the agent rather than papered over, which is the 
 
 ## Roadmap
 
-The project is a deliberate stopping point at Layer 3 (a complete, self-contained portfolio piece). Planned extensions:
+The project is a deliberate stopping point at Layer 3.5 (a complete, self-contained portfolio piece). Planned extensions:
 
 - **Layer 4 (Observability / LLMOps).** Langfuse tracing per run (generated SQL, latency, tokens, cost), eval-metrics dashboard over time.
 - **Layer 5 (Hybrid routing + portion math).** A router agent that sends factual questions to Text-to-SQL and conceptual questions to RAG over a nutrition corpus, plus a `parse_portions` node for queries like *"calorias de 2 bananas e 2 ovos"*.

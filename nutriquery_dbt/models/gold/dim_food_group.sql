@@ -3,6 +3,7 @@
 SELECT
     ROW_NUMBER() OVER (ORDER BY food_group_name) AS food_group_id,
     food_group_name,
+    strip_accents(lower(food_group_name)) AS food_group_name_normalized,
     source
 FROM (
     SELECT DISTINCT

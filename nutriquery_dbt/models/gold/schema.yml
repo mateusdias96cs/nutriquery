@@ -10,6 +10,9 @@ models:
       - name: food_group_name
         data_tests:
           - not_null
+      - name: food_group_name_normalized
+        data_tests:
+          - not_null
       - name: source
         data_tests:
           - not_null
@@ -21,6 +24,9 @@ models:
           - not_null
           - unique
       - name: food_name
+        data_tests:
+          - not_null
+      - name: food_name_normalized
         data_tests:
           - not_null
       - name: food_group_id
