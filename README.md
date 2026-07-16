@@ -197,7 +197,10 @@ nutriquery/
 
 ## Setup & run
 
-Requires Windows 11 + WSL2 (Ubuntu) or any Linux, with Python 3.12.
+Requires Windows 11 + WSL2 (Ubuntu) or any Linux, and **Python 3.12 specifically**.
+`dbt-core` and `dagster-dbt` cap at `<3.14`, and several pins resolve only on 3.12, so
+call `python3.12` explicitly rather than `python3` — on many distros the latter is
+already 3.13+ and the install will fail on `Requires-Python`.
 
 ```bash
 # 1. Clone and enter
@@ -205,12 +208,12 @@ git clone https://github.com/<your-user>/nutriquery.git
 cd nutriquery
 
 # 2. Create the virtual environment and install deps
-python3 -m venv .venv
+python3.12 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
 
 # 3. Set your free Groq API key (https://console.groq.com)
-echo "GROQ_API_KEY=your_key_here" > .env
+export GROQ_API_KEY=your_key_here
 
 # 4. Build the warehouse (bronze → silver → gold)
 python3 ingest_taco.py && python3 ingest_taco_ag.py && python3 ingest_taco_aa.py
