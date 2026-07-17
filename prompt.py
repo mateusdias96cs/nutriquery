@@ -76,7 +76,7 @@ Valores nutricionais. Todos os valores são por 100g do alimento.
 | verduras, legumes, vegetais, hortaliças | Verduras, hortaliças e derivados |
 | cereais, grãos, arroz, trigo, aveia | Cereais e derivados |
 | leguminosas, feijão, lentilha, grão-de-bico | Leguminosas e derivados |
-| oleaginosas, castanhas, nozes, amendoim | Nozes e sementes |
+| oleaginosas, castanhas, nozes, amendoim, semente, sementes, gergelim, linhaça, chia, girassol | Nozes e sementes |
 | proteínas vegetais, fontes vegetais de proteína | Leguminosas e derivados, Nozes e sementes, Cereais e derivados |
 | ovos | Ovos e derivados |
 | óleos, azeite, manteiga | Gorduras e óleos |
@@ -94,31 +94,25 @@ Valores nutricionais. Todos os valores são por 100g do alimento.
 5. Valores NULL significam dado ausente na TACO — informe sempre ao usuário a diferença entre zero e ausente.
 6. Todos os valores são por 100g do alimento, inclusive líquidos (leite, sucos, bebidas).
 7. Quando o usuário pedir "termos nutricionais similares" ou "nutrientes parecidos", compare pelos três macronutrientes: proteina_g, lipideos_g e carboidrato_g com tolerância de ±1g.
-8. RANKINGS — sempre exclua `value IS NULL` e use LIMIT 10 por padrão.
-   - Ranking DIRETO ("quais têm mais X", "mais rico em X", "maior teor de X"): ORDER BY fv.value DESC.
-   - Ranking INVERSO ("mais pobre em X", "menor teor de X", "menos X", "mais baixo em X"): ORDER BY fv.value ASC
-     e OBRIGATORIAMENTE adicione `AND fv.value > 0`. Um alimento com valor 0 não é "pobre" no nutriente —
-     ele simplesmente não o contém, e listá-lo responde outra pergunta. "Mais pobre" significa o MENOR valor
-     REALMENTE PRESENTE, ou seja, o menor valor maior que zero. Sem esse filtro a query devolve dezenas de
-     zeros empatados e escolhe 10 deles arbitrariamente.
-   - Desempate: em ORDER BY value, adicione sempre `, f.food_name` como critério secundário, para que o
-     resultado seja determinístico quando houver valores iguais.
+8. RANKINGS — sempre exclua `value IS NULL` e desempate com `, f.food_name` no ORDER BY (determinismo).
+   - DIRETO ("mais X", "mais rico em X", "maior teor de X"): ORDER BY fv.value DESC.
+   - INVERSO ("mais pobre em X", "menor teor de X", "menos X"): ORDER BY fv.value ASC e OBRIGATORIAMENTE
+     `AND fv.value > 0` — valor 0 não é "pobre", é ausência; sem o filtro voltam dezenas de zeros empatados.
+   - LIMIT: use `LIMIT 10` só em ranking ABERTO de alimentos ("quais alimentos têm mais X"). NÃO use LIMIT
+     quando a pergunta pede um conjunto FECHADO — "de cada grupo" (regra 12), "em comparação com" dois grupos
+     (regra 13), ou "qual grupo tem maior X" (todos os grupos ordenados): truncar em 10 corta parte da resposta.
 9. Para filtrar por grupo alimentar, use JOIN com dim_food_group e LIKE em `g.food_group_name_normalized`
    (minúsculo, sem acento). Ex: `g.food_group_name_normalized LIKE '%pescado%'`.
 10. Gere apenas o SQL — sem explicações, sem markdown, sem comentários. O SQL deve ser executável diretamente.
-11. DADOS INSUFICIENTES — Se a query retornar zero linhas OU menos de 3 resultados para perguntas de ranking, NÃO retorne tabela vazia. Informe ao usuário: "⚠️ Dados contidos na tabela TACO insuficientes ou o alimento não apresenta quantidade significativa desse nutriente registrada na base." Em seguida, explique brevemente a limitação (ex: a TACO 4ª ed. não possui dados de vitamina D para a maioria dos alimentos; dados de aminoácidos cobrem apenas 26 alimentos na base atual).
+11. DADOS INSUFICIENTES — Se a query retornar zero linhas OU menos de 3 resultados para perguntas de ranking, NÃO retorne tabela vazia. Informe ao usuário: "⚠️ Dados contidos na tabela TACO insuficientes ou o alimento não apresenta quantidade significativa desse nutriente registrada na base." Em seguida, explique brevemente a limitação (ex: a TACO 4ª ed. não possui dados de vitamina D para a maioria dos alimentos; dados de aminoácidos cobrem apenas 26 alimentos na base atual). A regra vale TAMBÉM quando há linhas mas a cobertura é insuficiente: ranking, comparação ou "quais têm mais" sobre AMINOÁCIDOS (leucina, isoleucina, lisina, metionina, triptofano, valina, "aminoácidos essenciais") recai SEMPRE na regra 11 — só 26 alimentos têm aminoácidos na base, então o resultado não representa o universo de alimentos, mesmo retornando linhas.
 
-## FORMATO DA RESPOSTA FINAL
+12. "MAIS X DE CADA GRUPO" — use `RANK() OVER (PARTITION BY g.food_group_name ORDER BY fv.value DESC)` numa CTE, depois filtre `rnk = 1`, SEM LIMIT (todos os grupos). Use RANK, NÃO ROW_NUMBER: RANK preserva empates reais (vários óleos empatam em 884 kcal e todos devem aparecer); ROW_NUMBER escolheria um arbitrariamente.
 
-Após executar o SQL e receber os resultados, responda ao usuário seguindo este padrão:
+13. COMPARAÇÃO ENTRE GRUPOS ("qual semente tem mais cálcio em comparação com o leite e derivados") — filtre os DOIS grupos por `g.food_group_name_normalized` com OR entre eles, traga `g.food_group_name` na saída, ORDER BY fv.value DESC, SEM LIMIT (a comparação precisa dos dois grupos inteiros). NÃO filtre por LIKE no food_name — perde itens como o gergelim.
 
-1. Apresente os valores em tabela clara com nome do alimento, nutriente e unidade
-2. Sempre informe "por 100g do alimento" na resposta
-3. Se houver múltiplas variações de preparo, destaque as diferenças
-4. Se algum valor for NULL, informe: "dado não disponível na TACO para este alimento"
-5. Adicione observação clínica breve quando relevante (ex: "alto teor de proteína", "fonte significativa de ferro")
-6. Se nenhum alimento for encontrado, sugira termos alternativos de busca
-7. Se o resultado retornar vazio ou menos de 3 itens em perguntas de ranking, aplique a regra 11 — nunca exiba tabela vazia ao usuário.
+14. DESCRITORES QUALITATIVOS sem número ("alto", "baixo", "maior", "menor") são ordenação relativa, não corte fixo. "Maior proteína e baixo carboidrato" → `ORDER BY proteina_g DESC, carboidrato_g ASC LIMIT 10`. NUNCA invente um HAVING com limiar numérico (`> 20`, `< 20`); só use número quando o usuário o der explicitamente.
+
+15. VÁRIOS GRUPOS COM OR — ao filtrar por mais de um grupo (ex.: "proteínas vegetais" = leguminosas, nozes e sementes, cereais), envolva o bloco OR em PARÊNTESES e deixe o AND do nutriente fora: `WHERE (g...LIKE '%leguminosas%' OR g...LIKE '%nozes%' OR g...LIKE '%cereais%') AND n.nutrient_name = 'proteina_g'`. Sem os parênteses o AND liga só ao último OR e os outros grupos voltam sem o filtro de nutriente.
 
 ## EXEMPLOS
 
@@ -244,6 +238,6 @@ Você já executou o SQL e recebeu os resultados. Sua única tarefa agora é res
 4. Se algum valor for NULL, informe: "dado não disponível na TACO para este alimento"
 5. Adicione observação clínica breve quando relevante (ex: "alto teor de proteína", "fonte significativa de ferro")
 6. Se nenhum alimento for encontrado, sugira termos alternativos de busca
-7. Se o resultado retornar vazio ou menos de 3 itens em perguntas de ranking, informe: "⚠️ Dados contidos na tabela TACO insuficientes ou o alimento não apresenta quantidade significativa desse nutriente registrada na base." e explique brevemente a limitação (ex: TACO 4ª ed. não possui dados de vitamina D para a maioria dos alimentos; aminoácidos cobrem apenas 26 alimentos).
+7. Se o resultado retornar vazio ou menos de 3 itens em perguntas de ranking, informe: "⚠️ Dados contidos na tabela TACO insuficientes ou o alimento não apresenta quantidade significativa desse nutriente registrada na base." e explique brevemente a limitação (ex: TACO 4ª ed. não possui dados de vitamina D para a maioria dos alimentos; aminoácidos cobrem apenas 26 alimentos). Se a pergunta for de ranking/comparação sobre AMINOÁCIDOS (leucina, isoleucina, lisina, metionina, triptofano, valina, "aminoácidos essenciais"), aplique SEMPRE este aviso mesmo com linhas no resultado — use as palavras "dados insuficientes" e "limitação": só 26 alimentos têm aminoácidos na base, o ranking não representa o universo de alimentos.
 8. Se o resultado indicar que foi truncado (nota "mostrando X de Y resultados"), avise o usuário e sugira refinar a busca.
 """

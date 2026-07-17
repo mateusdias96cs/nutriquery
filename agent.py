@@ -18,6 +18,10 @@ MAX_RESULT_ROWS = 50
 MAX_LLM_RETRIES = 5
 MAX_HISTORY_TURNS = 3
 
+# Acima disto o 429 é o limite diário, não o por minuto: esperar não adianta
+# dentro de uma rodada, então falha na hora e deixa quem chamou decidir.
+MAX_RATE_LIMIT_WAIT = 120.0
+
 class AgentState(TypedDict):
     # A conversa em si. O checkpoint guarda esta lista inteira por thread; é ela
     # que sobrevive ao restart. Os demais campos são de trabalho, válidos por turno.
@@ -45,10 +49,21 @@ def _is_rate_limit(exc: Exception) -> bool:
 
 
 def _retry_after(exc: Exception) -> Optional[float]:
-    """Groq devolve o tempo de espera sugerido no corpo do erro 429."""
+    """Groq devolve o tempo de espera sugerido no corpo do erro 429.
+
+    O formato varia com o limite atingido: o de tokens por minuto vem como
+    `8.412s`, o de tokens por dia como `27m23.328s`. Ler só os segundos faria
+    o backoff esperar 23s por uma janela que só abre em 27 minutos.
+    """
     import re
-    m = re.search(r"try again in ([\d.]+)s", str(exc), re.IGNORECASE)
-    return float(m.group(1)) if m else None
+    m = re.search(
+        r"try again in (?:([\d.]+)h)?(?:([\d.]+)m)?(?:([\d.]+)s)?",
+        str(exc), re.IGNORECASE
+    )
+    if not m or not any(m.groups()):
+        return None
+    h, mi, s = (float(g) if g else 0.0 for g in m.groups())
+    return h * 3600 + mi * 60 + s
 
 
 def invoke_llm(messages: list):
@@ -62,6 +77,8 @@ def invoke_llm(messages: list):
             if not _is_rate_limit(e) or attempt == MAX_LLM_RETRIES - 1:
                 raise
             wait = _retry_after(e) or delay
+            if wait > MAX_RATE_LIMIT_WAIT:
+                raise
             wait += random.uniform(0, 0.5)  # jitter
             print(f"  ⏳ rate limit — aguardando {wait:.1f}s (tentativa {attempt + 1}/{MAX_LLM_RETRIES})")
             time.sleep(wait)

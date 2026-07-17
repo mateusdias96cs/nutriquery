@@ -43,6 +43,14 @@ def main():
             df.to_parquet(out_path, index=False)
             print(f"[OK]   {qid} — {len(df)} linhas → {out_path.name}")
             summary["ok"].append(qid)
+            # Respostas alternativas igualmente corretas (ex.: pergunta singular
+            # que aceita tanto o top-1 quanto o ranking). Acertar qualquer uma
+            # conta como acerto — gold único transforma ambiguidade em reprovação.
+            for i, alt in enumerate(q.get("sql_reference_alt", [])):
+                alt_path = RESULTS_DIR / f"{qid}_alt{i}.parquet"
+                df_alt = conn.execute(alt).df()
+                df_alt.to_parquet(alt_path, index=False)
+                print(f"       └─ alt{i} — {len(df_alt)} linhas → {alt_path.name}")
         except Exception as e:
             print(f"[ERR]  {qid} — {e}")
             summary["error"].append(qid)

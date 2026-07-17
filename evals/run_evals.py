@@ -1,6 +1,18 @@
 """
-run_evals.py — v3
-Comparação inteligente: subset match + tolerância numérica + colunas flexíveis.
+run_evals.py — v4
+
+Duas trilhas separadas:
+
+  determinística (aqui)  — validade sintática, correção do resultado, uso de
+                           schema, eficiência e segurança. Zero LLM, zero token.
+  LLM-as-judge (judge.py) — só a prosa das perguntas de regra 11.
+
+Cada eixo é reportado como métrica independente. Um gate único ("passou/não
+passou") foi o que escondeu, por três rodadas, que metade das perguntas nem
+tinha sido avaliada por falta de orçamento.
+
+A geração é cara (Groq) e a pontuação é grátis: o relatório guarda o SQL e a
+prosa inteiros, então dá para reavaliar rodadas antigas sem gastar token.
 """
 
 import json
@@ -13,7 +25,9 @@ from pathlib import Path
 from datetime import datetime
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
-from agent import agent_stateless, agent_sql_only
+sys.path.insert(0, os.path.dirname(__file__))
+from agent import agent_stateless, agent_sql_only, _is_rate_limit
+from checks import compare, static_checks, carregar_catalogo
 
 DATASET_PATH   = Path(__file__).parent / "gold_dataset.json"
 RESULTS_DIR    = Path(__file__).parent / "gold_results"
@@ -113,11 +127,16 @@ def check_regra11(response_text: str) -> bool:
     return any(k in response_text.lower() for k in keywords)
 
 
-def run_eval(q: dict, conn) -> dict:
+def run_eval(q: dict, conn, catalogo: dict) -> dict:
     qid      = q["id"]
     question = q["question"]
     behavior = q.get("expected_behavior", None)
     diff     = q["difficulty"]
+    # Vem da semântica da pergunta, declarado no dataset — nunca inferido do
+    # ORDER BY do gold: "quanto de ferro tem o fígado" não pede ordem alguma,
+    # mesmo com o gold ordenando por valor.
+    order_matters = q.get("order_matters", False)
+    compare_mode  = q.get("compare_mode", "rows")
 
     print(f"\n{'─'*60}")
     print(f"[{qid}] {question}")
@@ -137,6 +156,14 @@ def run_eval(q: dict, conn) -> dict:
         sql_gerado = result.get("sql", "")
         resposta   = result.get("result", "") if needs_prose else ""
     except Exception as e:
+        # Um 429 diz que o orçamento acabou, não que o agente errou. Contar isso
+        # como reprovação afundou a accuracy das rodadas anteriores (4.7%, 23.8%,
+        # 33.3%) — os números mediam o free tier da Groq, não o text-to-SQL.
+        if _is_rate_limit(e):
+            print(f"  ⏭️  SEM ORÇAMENTO — pergunta não avaliada")
+            return {"id": qid, "difficulty": diff, "question": question,
+                    "status": "skipped_rate_limit", "passed": False,
+                    "skipped": True, "sql_gerado": "", "error": str(e)}
         print(f"  ❌ ERRO no agente: {e}")
         return {"id": qid, "difficulty": diff, "question": question,
                 "status": "agent_error", "passed": False,
@@ -144,52 +171,67 @@ def run_eval(q: dict, conn) -> dict:
 
     print(f"  SQL: {sql_gerado[:100]}{'...' if len(sql_gerado) > 100 else ''}")
 
-    # Regra 11
+    # ── eixos estáticos: valem para toda pergunta, inclusive as de regra 11 ──
+    estatico = static_checks(sql_gerado, catalogo) if sql_gerado else {}
+    for eixo, veredito in estatico.items():
+        if veredito != "ok":
+            print(f"  ⚠️  {eixo}: {veredito}")
+
+    base = {"id": qid, "difficulty": diff, "question": question,
+            "sql_gerado": sql_gerado, "checks": estatico}
+
+    # Regra 11 — a prosa é julgada à parte (judge.py); aqui só se registra.
+    # A resposta vai inteira, não truncada: a geração custa Groq, a pontuação
+    # não. Guardar o texto completo deixa reavaliar a prosa sem regerar nada.
     if behavior == "regra_11_dados_insuficientes":
         passed = check_regra11(resposta)
-        emoji  = "✅" if passed else "❌"
-        status = "regra11_ok" if passed else "regra11_fail"
-        print(f"  {emoji} Regra 11 — {'detectada' if passed else 'NÃO detectada'}")
-        return {"id": qid, "difficulty": diff, "question": question,
-                "status": status, "passed": passed,
-                "sql_gerado": sql_gerado, "resposta_preview": resposta[:300]}
+        print(f"  {'✅' if passed else '❌'} Regra 11 (keyword) — "
+              f"{'detectada' if passed else 'NÃO detectada'}")
+        return {**base, "status": "regra11_ok" if passed else "regra11_fail",
+                "passed": passed, "resposta": resposta}
 
-    # Execution accuracy
-    ref_path = RESULTS_DIR / f"{qid}.parquet"
-    if not ref_path.exists():
+    # ── correção do resultado ──
+    refs = [RESULTS_DIR / f"{qid}.parquet"]
+    refs += sorted(RESULTS_DIR.glob(f"{qid}_alt*.parquet"))
+    refs = [p for p in refs if p.exists()]
+    if not refs:
         print(f"  ⚠️  Parquet não encontrado")
-        return {"id": qid, "difficulty": diff, "question": question,
-                "status": "ref_missing", "passed": False, "sql_gerado": sql_gerado}
-
-    df_ref = pd.read_parquet(ref_path)
+        return {**base, "status": "ref_missing", "passed": False}
 
     try:
         df_agent = conn.execute(sql_gerado).df()
     except Exception as e:
         print(f"  ❌ SQL falhou: {e}")
-        return {"id": qid, "difficulty": diff, "question": question,
-                "status": "sql_error", "passed": False,
-                "sql_gerado": sql_gerado, "error": str(e)}
+        return {**base, "status": "sql_error", "passed": False, "error": str(e)}
 
-    passed, motivo = smart_compare(df_agent, df_ref)
-    emoji = "✅" if passed else "❌"
-    print(f"  {emoji} ref:{len(df_ref)}L agente:{len(df_agent)}L — {motivo}")
-
-    return {"id": qid, "difficulty": diff, "question": question,
-            "status": "pass" if passed else "fail", "passed": passed,
-            "sql_gerado": sql_gerado, "rows_ref": len(df_ref),
-            "rows_agent": len(df_agent), "motivo": motivo}
+    # Acertar QUALQUER referência conta: quando a pergunta admite mais de uma
+    # resposta correta, gold único vira reprovação arbitrária.
+    motivo = ""
+    passed = False
+    for ref_path in refs:
+        df_ref = pd.read_parquet(ref_path)
+        ok, por_que = compare(df_ref, df_agent, order_matters, compare_mode)
+        if ok:
+            passed, motivo = True, f"{por_que} [{ref_path.stem}]"
+            break
+        if not motivo:
+            motivo = por_que
+    print(f"  {'✅' if passed else '❌'} agente:{len(df_agent)}L — {motivo}")
+    return {**base, "status": "pass" if passed else "fail", "passed": passed,
+            "rows_agent": len(df_agent), "motivo": motivo,
+            "order_matters": order_matters, "compare_mode": compare_mode}
 
 
 def main():
     with open(DATASET_PATH, encoding="utf-8") as f:
         dataset = json.load(f)
 
-    conn    = duckdb.connect(str(DB_PATH), read_only=True)
-    results = []
+    conn     = duckdb.connect(str(DB_PATH), read_only=True)
+    catalogo = carregar_catalogo(conn)
+    results  = []
 
     for i, q in enumerate(dataset["questions"]):
-        r = run_eval(q, conn)
+        r = run_eval(q, conn, catalogo)
         results.append(r)
         if i < len(dataset["questions"]) - 1:
             print(f"  ⏳ aguardando {DELAY_SECONDS}s...")
@@ -197,20 +239,48 @@ def main():
 
     conn.close()
 
-    total  = len(results)
-    passed = sum(1 for r in results if r["passed"])
+    evaluated = [r for r in results if not r.get("skipped")]
+    skipped   = [r for r in results if r.get("skipped")]
+    total     = len(evaluated)
+    passed    = sum(1 for r in evaluated if r["passed"])
     by_diff = {}
-    for r in results:
+    for r in evaluated:
         d = r["difficulty"]
         by_diff.setdefault(d, {"total": 0, "passed": 0})
         by_diff[d]["total"] += 1
         if r["passed"]:
             by_diff[d]["passed"] += 1
 
+    # Eixos independentes, não um gate único: um número agregado esconde qual
+    # dimensão quebrou — foi assim que "33%" passou por accuracy quando na
+    # verdade metade das perguntas não tinha sido avaliada.
+    def taxa(eixo):
+        vistos = [r for r in evaluated if r.get("checks", {}).get(eixo)]
+        if not vistos:
+            return None
+        ok = sum(1 for r in vistos if r["checks"][eixo] == "ok")
+        return {"ok": ok, "total": len(vistos), "taxa": round(ok / len(vistos), 4)}
+
+    metricas = {
+        "execution_accuracy": {
+            "passed": passed, "total": total,
+            "taxa": round(passed / total, 4) if total else None,
+        },
+        "validade_sintatica": taxa("sintaxe"),
+        "uso_de_schema":      taxa("schema"),
+        "seguranca":          taxa("seguranca"),
+        "eficiencia":         taxa("eficiencia"),
+    }
+
     report = {
         "run_at": datetime.now().isoformat(),
+        "dataset_version": dataset.get("version"),
         "total": total, "passed": passed,
-        "accuracy": round(passed / total, 4),
+        "skipped": len(skipped),
+        "skipped_ids": [r["id"] for r in skipped],
+        "complete": len(skipped) == 0,
+        "accuracy": round(passed / total, 4) if total else None,
+        "metricas": metricas,
         "by_difficulty": by_diff,
         "details": results
     }
@@ -220,7 +290,19 @@ def main():
         json.dump(report, f, ensure_ascii=False, indent=2)
 
     print(f"\n{'═'*60}")
-    print(f"  EXECUTION ACCURACY: {passed}/{total} = {report['accuracy']*100:.1f}%")
+    if total:
+        print(f"  EXECUTION ACCURACY: {passed}/{total} = {report['accuracy']*100:.1f}%")
+    else:
+        print(f"  SEM ACCURACY — nenhuma pergunta avaliada")
+    print(f"{'─'*60}")
+    for nome, m in metricas.items():
+        if nome == "execution_accuracy" or not m:
+            continue
+        print(f"  {nome:20} {m['ok']}/{m['total']} ({m['taxa']*100:.0f}%)")
+    if skipped:
+        print(f"  ⚠️  PARCIAL — {len(skipped)}/{len(results)} sem orçamento: "
+              f"{', '.join(r['id'] for r in skipped)}")
+        print(f"     A accuracy acima cobre só as {total} avaliadas.")
     print(f"{'═'*60}")
     for d, m in sorted(by_diff.items()):
         pct = m['passed'] / m['total'] * 100

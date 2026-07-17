@@ -111,7 +111,7 @@ Design decisions:
 - **Read-only guardrail:** the agent's DuckDB connection is `read_only=True`; it can never modify the warehouse.
 - **Self-correction:** on a SQL error, the message is injected back into the prompt and the agent retries (up to 3 attempts).
 - **Rate-limit backoff:** the free tier's 429s are retried with exponential backoff, honouring the wait Groq suggests in the error body.
-- **Schema-aware system prompt:** an 11-rule prompt encodes table/column descriptions, synonym mappings, `NULL`-semantics and ranking rules (a food with `0` is not "poor" in a nutrient, it simply lacks it, so inverse rankings filter `value > 0`).
+- **Schema-aware system prompt:** a 15-rule prompt encodes table/column descriptions, synonym mappings, `NULL`-semantics and ranking rules (a food with `0` is not "poor" in a nutrient, it simply lacks it, so inverse rankings filter `value > 0`), plus per-group ranking with `RANK()`, cross-group comparison, and conditional `LIMIT` (a "top foods" list is capped, a "per group" or "compared to" answer is not).
 - **Accents solved in the data layer, not the prompt:** DuckDB's `ILIKE` is accent-sensitive (`fígado` ≠ `figado`). Rather than asking the LLM to spell Portuguese correctly, the gold dimensions carry `*_normalized` columns (`strip_accents(lower(...))`) that the agent filters on, while the accented column is what gets displayed.
 
 *Proves: agentic tool use, structured output, error handling.*
@@ -152,15 +152,11 @@ A custom **execution-accuracy** harness over a hand-curated gold dataset.
 | `aggregation` | 5 |
 | `ambiguous` | 5 |
 
-**Three-level comparison** (strict → flexible):
-
-1. Exact numeric match
-2. Subset match (reference values appear in the agent's result)
-3. Food-name overlap ≥ 80 %
+**Column-wise result comparison.** Each gold column has to appear in the agent's result with matching values (defog-style subset by column), and row counts have to match, so a `SELECT *` dump can never pass by accident. Row order is only enforced when the question's semantics require it (declared per question, never inferred from the gold's `ORDER BY`), and questions with ties on the `LIMIT` boundary compare by value set. The comparator is itself guarded by two sanity tests (`test_checks.py`, no LLM): a degenerate whole-table dump must score 0 percent, and each gold fed back as if it were the agent's own answer must score 100 percent. A comparator that fails either test is not trusted.
 
 Five questions deliberately have **no reference result**: their correct behavior is to *refuse* and return an "insufficient data in TACO" message (e.g. vitamin-D rankings, amino-acid questions over foods TACO never measured). The harness validates that refusal too, testing the agent's *epistemic honesty*, not just its arithmetic.
 
-> **Current state (honest note).** The harness is fully implemented and validated on partial runs. Running the complete benchmark in a single pass is constrained by free-tier LLM daily token limits, a deliberate trade-off since the project is intentionally zero-cost. The framework, gold dataset, comparison logic and reporting are complete and reproducible.
+> **Current state.** The complete benchmark now runs in a single pass (21 of 21 questions, none skipped) within the free-tier daily token budget. Latest run: execution accuracy 57 percent (12 of 21), with the static-quality axes (syntactic validity, schema use, safety, efficiency) at 100 percent. Because each report stores the generated SQL, every run is re-scored offline against the current oracle and golds without spending a single token, and that offline re-scoring is what surfaced a bug in one gold query itself (an average where the correct answer was a total, now fixed). Per-run history is generated into `evals/QUALITY_LOG.md`.
 
 *Proves: evaluation rigor, a differentiator that only a minority of AI portfolios demonstrate.*
 
@@ -176,7 +172,7 @@ nutriquery/
 ├── ingest_taco.py              # bronze ingestion (main composition)
 ├── ingest_taco_ag.py           # bronze ingestion (fatty acids)
 ├── ingest_taco_aa.py           # bronze ingestion (amino acids)
-├── prompt.py                   # SYSTEM_PROMPT (11 rules) + RESPONSE_PROMPT
+├── prompt.py                   # SYSTEM_PROMPT (15 rules) + RESPONSE_PROMPT
 ├── agent.py                    # LangGraph Text-to-SQL agent (+ checkpointing)
 ├── orchestration/
 │   ├── assets.py
@@ -187,8 +183,12 @@ nutriquery/
 │       └── gold/               # dim_*.sql, fact_nutrient_values.sql, schema.yml
 └── evals/
     ├── gold_dataset.json       # 21 curated questions
-    ├── generate_gold.py
+    ├── generate_gold.py        # runs each gold query, saves reference parquet
+    ├── checks.py               # result comparator + static SQL checks
+    ├── test_checks.py          # sanity tests for the comparator (no LLM)
     ├── run_evals.py            # harness
+    ├── quality_log.py          # re-scores every run, writes QUALITY_LOG.md
+    ├── QUALITY_LOG.md          # per-run quality history (generated)
     ├── gold_results/           # reference parquet results
     └── reports/                # per-run JSON reports
 ```
