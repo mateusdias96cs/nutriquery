@@ -9,9 +9,11 @@ venv/
 db/*.duckdb
 db/*.duckdb.wal
 db/checkpoints.sqlite
+db/query_cache.sqlite
 nutriquery_dbt/target/
 nutriquery_dbt/dbt_packages/
 nutriquery_dbt/logs/
 .dagster/
 dagster_home/
+.langgraph_api/
 .DS_Store

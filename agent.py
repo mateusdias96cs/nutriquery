@@ -13,10 +13,23 @@ from langchain_core.messages import AIMessage
 from langchain_groq import ChatGroq
 from typing import TypedDict, Optional, Annotated
 from prompt import SYSTEM_PROMPT, RESPONSE_PROMPT
+from sql_parser import SQLResponseParser, SQLParsingError
+from query_cache import QueryCache
 
 MAX_RESULT_ROWS = 50
 MAX_LLM_RETRIES = 5
 MAX_HISTORY_TURNS = 3
+
+# Tetos por chamada — sem isso o Groq usa o máximo do modelo, e uma geração
+# degenerada (eco do schema, repetição) pode queimar orçamento do free tier
+# sem entregar nada útil.
+# SQL: a query mais complexa do prompt (few-shot de "alimentos similares",
+# com CTE e 3 subqueries) fica em ~300 tokens — 500 dá folga sem deixar a
+# geração fugir do tamanho de uma query.
+SQL_MAX_TOKENS = 500
+# Resposta: cobre uma tabela de até MAX_RESULT_ROWS linhas + nota clínica
+# breve sem risco de cortar a resposta no meio da frase.
+RESPONSE_MAX_TOKENS = 1024
 
 # Acima disto o 429 é o limite diário, não o por minuto: esperar não adianta
 # dentro de uma rodada, então falha na hora e deixa quem chamou decidir.
@@ -40,6 +53,10 @@ llm = ChatGroq(
     temperature=0,
     api_key=os.environ["GROQ_API_KEY"]
 )
+
+# Exact-match, não semântico — ver query_cache.py para o porquê. Nome público
+# (sem "_") porque evals/run_evals.py importa pra reportar hits do harness.
+query_cache = QueryCache()
 
 def _is_rate_limit(exc: Exception) -> bool:
     if getattr(exc, "status_code", None) == 429:
@@ -66,13 +83,17 @@ def _retry_after(exc: Exception) -> Optional[float]:
     return h * 3600 + mi * 60 + s
 
 
-def invoke_llm(messages: list):
+def invoke_llm(messages: list, max_tokens: int):
     """llm.invoke com backoff exponencial em 429 — o free tier da Groq
-    derruba rodadas inteiras de eval sem isso."""
+    derruba rodadas inteiras de eval sem isso.
+
+    max_tokens é obrigatório e passado por chamada (não fixo no construtor
+    do ChatGroq) porque generate_sql e respond têm perfis de saída bem
+    diferentes — ver SQL_MAX_TOKENS / RESPONSE_MAX_TOKENS."""
     delay = 2.0
     for attempt in range(MAX_LLM_RETRIES):
         try:
-            return llm.invoke(messages)
+            return llm.invoke(messages, max_tokens=max_tokens)
         except Exception as e:
             if not _is_rate_limit(e) or attempt == MAX_LLM_RETRIES - 1:
                 raise
@@ -130,6 +151,16 @@ def generate_sql(state: AgentState) -> dict:
     # últimos turnos entram no prompt — histórico ilimitado estoura o contexto.
     prior = state.get("messages", [])[:-1][-(MAX_HISTORY_TURNS * 2):]
 
+    # Cache exact-match: só pra pergunta autônoma. Com histórico o mesmo texto
+    # pode significar outra coisa ("e de gordura?"); com erro em aberto, reusar
+    # o SQL cacheado repetiria exatamente o SQL que acabou de falhar em vez de
+    # corrigi-lo.
+    if not prior and not error:
+        cached = query_cache.lookup(question)
+        if cached is not None:
+            query_cache.record_hit(question)
+            return {"sql": cached.sql, "error": None}
+
     partes = []
     if prior:
         # O histórico vai como texto dentro de UMA mensagem de usuário, e não como
@@ -152,15 +183,21 @@ def generate_sql(state: AgentState) -> dict:
         {"role": "system", "content": SYSTEM_PROMPT},
         {"role": "user", "content": "\n".join(partes)}
     ]
-    response = invoke_llm(messages)
-    sql = response.content.strip()
-    if sql.startswith("```"):
-        lines = sql.split("\n")
-        sql = "\n".join(lines[1:-1]).strip()
-    return {"sql": sql, "error": None}
+    response = invoke_llm(messages, max_tokens=SQL_MAX_TOKENS)
+    try:
+        sql = SQLResponseParser.parse(response.content)
+        return {"sql": sql, "error": None}
+    except SQLParsingError as e:
+        # Sem SQL válido para executar — não vale a pena chamar execute_sql.
+        # O erro alimenta o mesmo loop de auto-correção de um erro de
+        # execução (check_result / increment_attempts), então a próxima
+        # tentativa de generate_sql já recebe a explicação do que faltou.
+        return {"sql": "", "error": f"Resposta do modelo não continha SQL válido: {e}"}
 
 def execute_sql(state: AgentState) -> dict:
     sql = state["sql"]
+    if not sql:
+        return {"result": None, "error": state.get("error") or "SQL vazio"}
     try:
         conn = duckdb.connect(DB_PATH, read_only=True)
         result = conn.execute(sql).df()
@@ -171,6 +208,14 @@ def execute_sql(state: AgentState) -> dict:
             result_str += f"\n... (mostrando {MAX_RESULT_ROWS} de {total_rows} resultados — refine sua busca para ver todos)"
         else:
             result_str = result.to_string(index=False)
+
+        # Grava o SQL validado assim que roda com sucesso — cobre também
+        # agent_sql_only (sem nó `respond`, caminho da maioria das perguntas
+        # do eval), que nunca passaria pelo store() de respond().
+        prior = state.get("messages", [])[:-1][-(MAX_HISTORY_TURNS * 2):]
+        if not prior:
+            query_cache.store(state["question"], sql, result_str)
+
         return {"result": result_str, "error": None}
     except Exception as e:
         return {"result": None, "error": str(e)}
@@ -179,11 +224,30 @@ def respond(state: AgentState) -> dict:
     question = state["question"]
     result = state["result"]
     sql = state["sql"]
+    prior = state.get("messages", [])[:-1][-(MAX_HISTORY_TURNS * 2):]
+
+    # Mesma regra do cache de SQL, aplicada à prosa: só pergunta autônoma, e só
+    # reaproveita se o resultado reexecutado agora bater com o snapshot salvo
+    # junto do cache — se a TACO mudou desde então, gera resposta nova.
+    if not prior:
+        cached = query_cache.lookup(question)
+        if (cached is not None and cached.response is not None
+                and cached.sql == sql and cached.result_snapshot == result):
+            query_cache.record_hit(question)
+            return {
+                "result": cached.response,
+                "messages": [AIMessage(content=cached.response, additional_kwargs={"sql": sql})],
+            }
+
     messages = [
         {"role": "system", "content": RESPONSE_PROMPT},
         {"role": "user", "content": f"""Pergunta: {question}\n\nSQL executado:\n{sql}\n\nResultado:\n{result}\n\nResponda ao usuário em português de forma clara, informando os valores com unidades e sempre mencionando que os valores são por 100g do alimento."""}
     ]
-    response = invoke_llm(messages)
+    response = invoke_llm(messages, max_tokens=RESPONSE_MAX_TOKENS)
+
+    if not prior and not state.get("error"):
+        query_cache.store(question, sql, result, response.content)
+
     # A resposta em prosa é o turno do assistente na conversa — anexá-la aqui é o
     # que dá contexto ao `generate_sql` do próximo turno. O SQL vai em
     # additional_kwargs para não haver duas listas paralelas a manter em sincronia.

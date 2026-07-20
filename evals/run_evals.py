@@ -13,8 +13,24 @@ tinha sido avaliada por falta de orçamento.
 
 A geração é cara (Groq) e a pontuação é grátis: o relatório guarda o SQL e a
 prosa inteiros, então dá para reavaliar rodadas antigas sem gastar token.
+
+RETOMADA ENTRE RODADAS (ver FINGERPRINT_FILES / load_previous_results):
+uma pergunta só é pulada (0 chamadas ao agente) se ela já passou numa rodada
+anterior. Falha, erro e "sem orçamento" (429 do free tier da Groq — o cenário
+mais comum de reexecução) sempre retestam. Isso é o que faz reexecutar o
+harness depois de bater o limite diário custar só as perguntas que faltaram,
+não as 21 de novo.
+
+A pulada só vale se nada que possa mudar o veredito mudou desde a última
+rodada: prompt.py (a geração em si), checks.py (o comparador) e
+gold_dataset.json (pergunta/gold/regras de comparação) entram num fingerprint
+sha256 gravado em `prompt_fingerprint` no relatório. Qualquer diferença nesse
+fingerprint invalida o histórico INTEIRO, não só a pergunta que mudou — um
+ajuste de prompt para consertar uma pergunta pode quebrar outra que antes
+passava, e reaproveitar o resultado antigo dela esconderia a regressão.
 """
 
+import hashlib
 import json
 import time
 import duckdb
@@ -26,7 +42,7 @@ from datetime import datetime
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 sys.path.insert(0, os.path.dirname(__file__))
-from agent import agent_stateless, agent_sql_only, _is_rate_limit
+from agent import agent_stateless, agent_sql_only, _is_rate_limit, query_cache
 from checks import compare, static_checks, carregar_catalogo
 
 DATASET_PATH   = Path(__file__).parent / "gold_dataset.json"
@@ -37,6 +53,37 @@ ROUND_DECIMALS = 2
 DELAY_SECONDS  = 15
 
 REPORTS_DIR.mkdir(exist_ok=True)
+
+# Retomada entre rodadas: uma pergunta só é pulada (sem chamar o agente) se já
+# passou numa rodada anterior E nada que possa mudar o veredito mudou desde
+# então — prompt (geração), checks.py (comparador) ou o próprio gold dataset
+# (pergunta, sql_reference, order_matters). Qualquer mudança nesses arquivos
+# invalida TODO o histórico, não só a pergunta afetada, porque um ajuste no
+# prompt pode consertar uma pergunta e quebrar outra ao mesmo tempo.
+FINGERPRINT_FILES = [
+    Path(__file__).parent.parent / "prompt.py",
+    Path(__file__).parent / "checks.py",
+    DATASET_PATH,
+]
+
+
+def compute_fingerprint() -> str:
+    h = hashlib.sha256()
+    for p in FINGERPRINT_FILES:
+        h.update(p.read_bytes())
+    return h.hexdigest()[:16]
+
+
+def load_previous_results() -> tuple[dict, str | None]:
+    """Lê o relatório mais recente já gravado (se existir) para decidir o que
+    pular nesta rodada. {question_id: detail} + o fingerprint gravado nele."""
+    reports = sorted(REPORTS_DIR.glob("eval_*.json"))
+    if not reports:
+        return {}, None
+    with open(reports[-1], encoding="utf-8") as f:
+        anterior = json.load(f)
+    por_id = {d["id"]: d for d in anterior.get("details", [])}
+    return por_id, anterior.get("prompt_fingerprint")
 
 def normalize_value(v):
     """Normaliza um valor para comparação: float arredondado ou string lower."""
@@ -226,11 +273,37 @@ def main():
     with open(DATASET_PATH, encoding="utf-8") as f:
         dataset = json.load(f)
 
+    fingerprint = compute_fingerprint()
+    resultados_anteriores, fingerprint_anterior = load_previous_results()
+    mudou_algo = fingerprint_anterior is not None and fingerprint_anterior != fingerprint
+
     conn     = duckdb.connect(str(DB_PATH), read_only=True)
     catalogo = carregar_catalogo(conn)
     results  = []
+    reaproveitadas = []
+
+    # Delta de hits nesta rodada = quantas chamadas de LLM foram evitadas pelo
+    # cache exact-match (query_cache.py) — relevante sobretudo ao reexecutar o
+    # harness várias vezes iterando em prompt.py, quando o gold dataset não muda.
+    cache_hits_antes = query_cache.stats()["total_hits"]
 
     for i, q in enumerate(dataset["questions"]):
+        qid = q["id"]
+        anterior = resultados_anteriores.get(qid)
+
+        # Só pula quem já passou E nada mudou desde então (ver FINGERPRINT_FILES).
+        # Falha, erro e "sem orçamento" retestam sempre — é exatamente o que
+        # não deve ficar pra trás numa retomada.
+        if (not mudou_algo and anterior is not None
+                and anterior.get("passed") and not anterior.get("skipped")):
+            print(f"\n{'─'*60}\n[{qid}] {q['question']}"
+                  f"\n  ↩️  já validado numa rodada anterior, sem mudança no "
+                  f"prompt/comparador/gold — pulando (0 tokens)")
+            r = {**anterior, "reused_from_previous_run": True}
+            results.append(r)
+            reaproveitadas.append(r)
+            continue
+
         r = run_eval(q, conn, catalogo)
         results.append(r)
         if i < len(dataset["questions"]) - 1:
@@ -238,6 +311,9 @@ def main():
             time.sleep(DELAY_SECONDS)
 
     conn.close()
+
+    cache_stats = query_cache.stats()
+    cache_hits_nesta_rodada = cache_stats["total_hits"] - cache_hits_antes
 
     evaluated = [r for r in results if not r.get("skipped")]
     skipped   = [r for r in results if r.get("skipped")]
@@ -275,12 +351,17 @@ def main():
     report = {
         "run_at": datetime.now().isoformat(),
         "dataset_version": dataset.get("version"),
+        "prompt_fingerprint": fingerprint,
         "total": total, "passed": passed,
         "skipped": len(skipped),
         "skipped_ids": [r["id"] for r in skipped],
         "complete": len(skipped) == 0,
         "accuracy": round(passed / total, 4) if total else None,
         "metricas": metricas,
+        "cache": {
+            "hits_nesta_rodada": cache_hits_nesta_rodada,
+            "perguntas_guardadas_no_total": cache_stats["entries"],
+        },
         "by_difficulty": by_diff,
         "details": results
     }
@@ -303,6 +384,16 @@ def main():
         print(f"  ⚠️  PARCIAL — {len(skipped)}/{len(results)} sem orçamento: "
               f"{', '.join(r['id'] for r in skipped)}")
         print(f"     A accuracy acima cobre só as {total} avaliadas.")
+    if cache_hits_nesta_rodada:
+        print(f"  💾 CACHE: {cache_hits_nesta_rodada} chamada(s) de LLM evitada(s) "
+              f"nesta rodada ({cache_stats['entries']} perguntas guardadas no total)")
+    if reaproveitadas:
+        print(f"  ↩️  RETOMADA: {len(reaproveitadas)} pergunta(s) já validada(s) antes, "
+              f"reaproveitada(s) sem chamar o agente: "
+              f"{', '.join(sorted(r['id'] for r in reaproveitadas))}")
+    elif mudou_algo:
+        print(f"  🔄 prompt.py, checks.py ou gold_dataset.json mudaram desde a "
+              f"última rodada — nada foi reaproveitado, tudo retestado do zero.")
     print(f"{'═'*60}")
     for d, m in sorted(by_diff.items()):
         pct = m['passed'] / m['total'] * 100
