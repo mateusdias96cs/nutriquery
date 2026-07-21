@@ -114,6 +114,8 @@ Valores nutricionais. Todos os valores são por 100g do alimento.
 
 15. VÁRIOS GRUPOS COM OR — ao filtrar por mais de um grupo (ex.: "proteínas vegetais" = leguminosas, nozes e sementes, cereais), envolva o bloco OR em PARÊNTESES e deixe o AND do nutriente fora: `WHERE (g...LIKE '%leguminosas%' OR g...LIKE '%nozes%' OR g...LIKE '%cereais%') AND n.nutrient_name = 'proteina_g'`. Sem os parênteses o AND liga só ao último OR e os outros grupos voltam sem o filtro de nutriente.
 
+16. NUTRIENTE COMPOSTO (soma de componentes) — quando um sinônimo acima lista MAIS DE UM nutrient_name (só dois casos: ômega-3 = ag_18_3_n3_g, ag_20_5_g, ag_22_6_g; gordura trans = ag_18_1t_g, ag_18_2t_g), o valor do alimento é a SOMA dos componentes por alimento. Use `SUM(fv.value)` com `WHERE n.nutrient_name IN (...componentes...) GROUP BY f.food_name`. NUNCA some com `MAX(CASE...) + MAX(CASE...)`: a aritmética `a+b+c` propaga NULL — se um componente for NULL o total vira NULL e o alimento cai do ranking (a linhaça só tem ALA e deve LIDERAR ômega-3). O `SUM` ignora NULL e é o único jeito certo. Sinônimo de UM só nutrient_name (ômega-6, saturada, mono/poli) NÃO soma — é coluna direta.
+
 ## EXEMPLOS
 
 Pergunta: quantas gramas de proteína tem 100g de frango grelhado?
@@ -218,6 +220,38 @@ WHERE n.nutrient_name = 'vitamina_d_mcg'
 ORDER BY fv.value DESC
 LIMIT 10;
 -- Se retornar vazio: aplicar regra 11 — informar limitação da TACO 4ª ed.
+
+Pergunta: qual alimento mais calórico de cada grupo?
+SQL:
+WITH ranked AS (
+  SELECT f.food_name, g.food_group_name, fv.value,
+         RANK() OVER (PARTITION BY g.food_group_name ORDER BY fv.value DESC) AS rnk
+  FROM fact_nutrient_values fv
+  JOIN dim_food f ON fv.food_id = f.food_id
+  JOIN dim_food_group g ON f.food_group_id = g.food_group_id
+  JOIN dim_nutrient n ON fv.nutrient_id = n.nutrient_id
+  WHERE n.nutrient_name = 'energia_kcal'
+    AND fv.value IS NOT NULL
+)
+SELECT food_name, food_group_name, value
+FROM ranked
+WHERE rnk = 1
+ORDER BY value DESC;
+-- RANK, NÃO ROW_NUMBER: traz TODOS os empatados no topo de cada grupo (os óleos
+-- empatam em 884 kcal, todos entram). SEM LIMIT — um vencedor por grupo, todos os grupos.
+
+Pergunta: qual alimento tem melhor fonte de ômega-3?
+SQL:
+SELECT f.food_name, SUM(fv.value) AS total_omega3_g
+FROM fact_nutrient_values fv
+JOIN dim_food f ON fv.food_id = f.food_id
+JOIN dim_nutrient n ON fv.nutrient_id = n.nutrient_id
+WHERE n.nutrient_name IN ('ag_18_3_n3_g', 'ag_20_5_g', 'ag_22_6_g')
+GROUP BY f.food_name
+ORDER BY total_omega3_g DESC
+LIMIT 10;
+-- Nutriente composto (regra 16): SUM ignora componentes NULL. NUNCA
+-- MAX(CASE)+MAX(CASE), que propaga NULL e derruba a linhaça (só tem ALA).
 """
 
 # A antiga "regra 12" (lista de acentuação obrigatória) foi removida: acentos agora

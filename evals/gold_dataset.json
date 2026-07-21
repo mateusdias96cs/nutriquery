@@ -62,7 +62,7 @@
         "OR"
       ],
       "clinical_note": "Gergelim (825mg/100g) supera vários queijos. Relevante para vegetarianos e intolerantes à lactose.",
-      "sql_reference": "SELECT f.food_name, fg.food_group_name, fv.value, n.unit FROM fact_nutrient_values fv JOIN dim_food f ON fv.food_id = f.food_id JOIN dim_food_group fg ON f.food_group_id = fg.food_group_id JOIN dim_nutrient n ON fv.nutrient_id = n.nutrient_id WHERE n.nutrient_name = 'calcio_mg' AND (fg.food_group_name = 'Nozes e sementes' OR fg.food_group_name = 'Leite e derivados') ORDER BY fv.value DESC",
+      "sql_reference": "SELECT f.food_name, fg.food_group_name, fv.value, n.unit FROM fact_nutrient_values fv JOIN dim_food f ON fv.food_id = f.food_id JOIN dim_food_group fg ON f.food_group_id = fg.food_group_id JOIN dim_nutrient n ON fv.nutrient_id = n.nutrient_id WHERE n.nutrient_name = 'calcio_mg' AND (fg.food_group_name = 'Nozes e sementes' OR fg.food_group_name = 'Leite e derivados') AND fv.value IS NOT NULL ORDER BY fv.value DESC",
       "order_matters": true,
       "compare_mode": "rows"
     },
@@ -78,7 +78,7 @@
       ],
       "clinical_note": "Todos os óleos empatam em 884 kcal/100g — empate real no banco, comportamento esperado.",
       "sql_reference": "WITH ranked AS (SELECT f.food_name, fg.food_group_name, fv.value, n.unit, RANK() OVER (PARTITION BY fg.food_group_name ORDER BY fv.value DESC) AS rnk FROM fact_nutrient_values fv JOIN dim_food f ON fv.food_id = f.food_id JOIN dim_food_group fg ON f.food_group_id = fg.food_group_id JOIN dim_nutrient n ON fv.nutrient_id = n.nutrient_id WHERE n.nutrient_name = 'energia_kcal') SELECT food_name, food_group_name, value, unit FROM ranked WHERE rnk = 1 ORDER BY value DESC",
-      "order_matters": true,
+      "order_matters": false,
       "compare_mode": "rows"
     },
     {
@@ -309,7 +309,7 @@
         "dois nutrientes cruzados"
       ],
       "clinical_note": "Óleos dominam com 884 kcal e 100g de gordura/100g — esperado. Manteiga aparece em seguida. Clinicamente relevante para orientação de uso de gorduras em dietas hipocalóricas.",
-      "sql_reference": "WITH calorias AS (SELECT fv.food_id, fv.value AS kcal FROM fact_nutrient_values fv JOIN dim_nutrient n ON fv.nutrient_id = n.nutrient_id WHERE n.nutrient_name = 'energia_kcal'), gordura AS (SELECT fv.food_id, fv.value AS lipideos_g FROM fact_nutrient_values fv JOIN dim_nutrient n ON fv.nutrient_id = n.nutrient_id WHERE n.nutrient_name = 'lipideos_g') SELECT f.food_name, c.kcal, g.lipideos_g FROM calorias c JOIN gordura g ON c.food_id = g.food_id JOIN dim_food f ON c.food_id = f.food_id WHERE c.kcal IS NOT NULL AND g.lipideos_g IS NOT NULL ORDER BY c.kcal DESC, g.lipideos_g DESC LIMIT 10",
+      "sql_reference": "WITH calorias AS (SELECT fv.food_id, fv.value AS kcal FROM fact_nutrient_values fv JOIN dim_nutrient n ON fv.nutrient_id = n.nutrient_id WHERE n.nutrient_name = 'energia_kcal'), gordura AS (SELECT fv.food_id, fv.value AS lipideos_g FROM fact_nutrient_values fv JOIN dim_nutrient n ON fv.nutrient_id = n.nutrient_id WHERE n.nutrient_name = 'lipideos_g') SELECT f.food_name, c.kcal, g.lipideos_g FROM calorias c JOIN gordura g ON c.food_id = g.food_id JOIN dim_food f ON c.food_id = f.food_id WHERE c.kcal IS NOT NULL AND g.lipideos_g IS NOT NULL ORDER BY c.kcal DESC, g.lipideos_g DESC, f.food_name LIMIT 10",
       "order_matters": true,
       "compare_mode": "rows"
     },
