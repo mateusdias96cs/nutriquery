@@ -257,7 +257,8 @@ def run_eval(q: dict, conn, catalogo: dict) -> dict:
     passed = False
     for ref_path in refs:
         df_ref = pd.read_parquet(ref_path)
-        ok, por_que = compare(df_ref, df_agent, order_matters, compare_mode)
+        ok, por_que = compare(df_ref, df_agent, order_matters, compare_mode,
+                              q.get("optional_columns"))
         if ok:
             passed, motivo = True, f"{por_que} [{ref_path.stem}]"
             break

@@ -68,12 +68,18 @@ def compare_exact(df_gold: pd.DataFrame, df_agent: pd.DataFrame,
 
 
 def compare_subset(df_gold: pd.DataFrame, df_agent: pd.DataFrame,
-                   order_matters: bool) -> tuple[bool, str]:
+                   order_matters: bool, optional_columns=None) -> tuple[bool, str]:
     """Cada coluna do gold existe no agente, idêntica elemento a elemento.
 
     Colunas extras no agente são toleradas. Linhas extras NÃO — `assert_series_equal`
     exige mesmo comprimento, que é o que impede o dump da tabela inteira de passar.
+
+    `optional_columns` são colunas que ESTA pergunta declara como decoração do
+    gold (não parte da resposta) — mesmo tratamento de `COLUNAS_OPCIONAIS`, mas
+    por pergunta, para não afrouxar as perguntas onde a mesma coluna É a resposta
+    (ex.: `food_group_name` é decorativo na Q016/Q017 mas é a resposta na Q003).
     """
+    opcionais = COLUNAS_OPCIONAIS | {str(c).lower() for c in (optional_columns or [])}
     if df_gold.empty and df_agent.empty:
         return True, "ambos vazios"
     if df_agent.empty:
@@ -99,7 +105,7 @@ def compare_subset(df_gold: pd.DataFrame, df_agent: pd.DataFrame,
             achou = True
             break
         if not achou:
-            if str(col_gold).lower() in COLUNAS_OPCIONAIS:
+            if str(col_gold).lower() in opcionais:
                 continue  # metadado; não faz parte da resposta
             return False, (f"coluna '{col_gold}' do gold não tem correspondente "
                            f"no agente com os mesmos valores")
@@ -114,7 +120,7 @@ def compare_subset(df_gold: pd.DataFrame, df_agent: pd.DataFrame,
 
 
 def compare_values(df_gold: pd.DataFrame, df_agent: pd.DataFrame,
-                   order_matters: bool) -> tuple[bool, str]:
+                   order_matters: bool, optional_columns=None) -> tuple[bool, str]:
     """Compara a sequência de valores numéricos, não a identidade das linhas.
 
     Para perguntas com empate exato na fronteira do LIMIT (Q006, Q009): qual dos
@@ -124,7 +130,7 @@ def compare_values(df_gold: pd.DataFrame, df_agent: pd.DataFrame,
     num_g = df_gold.select_dtypes(include=[np.number])
     num_a = df_agent.select_dtypes(include=[np.number])
     if num_g.empty:
-        return compare_subset(df_gold, df_agent, order_matters)
+        return compare_subset(df_gold, df_agent, order_matters, optional_columns)
     if len(df_agent) != len(df_gold):
         return False, f"cardinalidade: agente {len(df_agent)} vs gold {len(df_gold)}"
 
@@ -141,10 +147,11 @@ def compare_values(df_gold: pd.DataFrame, df_agent: pd.DataFrame,
 
 
 def compare(df_gold: pd.DataFrame, df_agent: pd.DataFrame,
-            order_matters: bool, mode: str = "rows") -> tuple[bool, str]:
+            order_matters: bool, mode: str = "rows",
+            optional_columns=None) -> tuple[bool, str]:
     if mode == "values":
-        return compare_values(df_gold, df_agent, order_matters)
-    return compare_subset(df_gold, df_agent, order_matters)
+        return compare_values(df_gold, df_agent, order_matters, optional_columns)
+    return compare_subset(df_gold, df_agent, order_matters, optional_columns)
 
 
 # ──────────────────────────── checagens estáticas ────────────────────────────

@@ -81,7 +81,8 @@ def rescore(rep: dict, ds: dict, conn, catalogo: dict) -> dict:
         for p in refs:
             good, why = compare(pd.read_parquet(p), df_a,
                                 q.get("order_matters", False),
-                                q.get("compare_mode", "rows"))
+                                q.get("compare_mode", "rows"),
+                                q.get("optional_columns"))
             if good:
                 passou, motivo = True, why
                 break

@@ -1,0 +1,435 @@
+{
+  "run_at": "2026-07-21T15:25:46.923529",
+  "dataset_version": "2.0",
+  "prompt_fingerprint": "7e0b908e33d3a922",
+  "total": 21,
+  "passed": 14,
+  "skipped": 0,
+  "skipped_ids": [],
+  "complete": true,
+  "accuracy": 0.6667,
+  "metricas": {
+    "execution_accuracy": {
+      "passed": 14,
+      "total": 21,
+      "taxa": 0.6667
+    },
+    "validade_sintatica": {
+      "ok": 21,
+      "total": 21,
+      "taxa": 1.0
+    },
+    "uso_de_schema": {
+      "ok": 21,
+      "total": 21,
+      "taxa": 1.0
+    },
+    "seguranca": {
+      "ok": 21,
+      "total": 21,
+      "taxa": 1.0
+    },
+    "eficiencia": {
+      "ok": 21,
+      "total": 21,
+      "taxa": 1.0
+    }
+  },
+  "cache": {
+    "hits_nesta_rodada": 4,
+    "perguntas_guardadas_no_total": 21
+  },
+  "by_difficulty": {
+    "simple_filter": {
+      "total": 5,
+      "passed": 5
+    },
+    "join_group": {
+      "total": 6,
+      "passed": 3
+    },
+    "aggregation": {
+      "total": 5,
+      "passed": 2
+    },
+    "ambiguous": {
+      "total": 5,
+      "passed": 4
+    }
+  },
+  "details": [
+    {
+      "id": "Q001",
+      "difficulty": "simple_filter",
+      "question": "Quanto de ferro tem o fígado?",
+      "sql_gerado": "SELECT f.food_name, fv.value AS ferro_mg\nFROM fact_nutrient_values fv\nJOIN dim_food f ON fv.food_id = f.food_id\nJOIN dim_nutrient n ON fv.nutrient_id = n.nutrient_id\nWHERE f.food_name_normalized LIKE '%figado%'\n  AND n.nutrient_name = 'ferro_mg'\nORDER BY f.food_name",
+      "checks": {
+        "sintaxe": "ok",
+        "seguranca": "ok",
+        "schema": "ok",
+        "eficiencia": "ok"
+      },
+      "status": "pass",
+      "passed": true,
+      "rows_agent": 3,
+      "motivo": "subset por coluna [Q001]",
+      "order_matters": false,
+      "compare_mode": "rows",
+      "reused_from_previous_run": true
+    },
+    {
+      "id": "Q002",
+      "difficulty": "join_group",
+      "question": "Qual fruta tem maior teor de vitamina C?",
+      "sql_gerado": "SELECT f.food_name, fv.value AS vitamina_c_mg\nFROM fact_nutrient_values fv\nJOIN dim_food f ON fv.food_id = f.food_id\nJOIN dim_nutrient n ON fv.nutrient_id = n.nutrient_id\nJOIN dim_food_group g ON f.food_group_id = g.food_group_id\nWHERE g.food_group_name_normalized LIKE '%frutas%'\n  AND n.nutrient_name = 'vitamina_c_mg'\n  AND fv.value IS NOT NULL\nORDER BY fv.value DESC\nLIMIT 10",
+      "checks": {
+        "sintaxe": "ok",
+        "seguranca": "ok",
+        "schema": "ok",
+        "eficiencia": "ok"
+      },
+      "status": "pass",
+      "passed": true,
+      "rows_agent": 10,
+      "motivo": "subset por coluna [Q002]",
+      "order_matters": true,
+      "compare_mode": "rows",
+      "reused_from_previous_run": true
+    },
+    {
+      "id": "Q003",
+      "difficulty": "aggregation",
+      "question": "Qual grupo alimentar tem maior quantidade de cálcio?",
+      "sql_gerado": "SELECT \n    g.food_group_name, \n    SUM(fv.value) AS total_calcio_mg\nFROM \n    fact_nutrient_values fv\nJOIN \n    dim_food f ON fv.food_id = f.food_id\nJOIN \n    dim_nutrient n ON fv.nutrient_id = n.nutrient_id\nJOIN \n    dim_food_group g ON f.food_group_id = g.food_group_id\nWHERE \n    n.nutrient_name = 'calcio_mg'\n    AND fv.value IS NOT NULL\nGROUP BY \n    g.food_group_name\nORDER BY \n    total_calcio_mg DESC",
+      "checks": {
+        "sintaxe": "ok",
+        "seguranca": "ok",
+        "schema": "ok",
+        "eficiencia": "ok"
+      },
+      "status": "pass",
+      "passed": true,
+      "rows_agent": 15,
+      "motivo": "subset por coluna [Q003]",
+      "order_matters": true,
+      "compare_mode": "rows",
+      "reused_from_previous_run": true
+    },
+    {
+      "id": "Q004",
+      "difficulty": "join_group",
+      "question": "Qual semente tem maior cálcio em comparação com o leite e derivados?",
+      "sql_gerado": "SELECT f.food_name, g.food_group_name, fv.value AS calcio_mg\nFROM fact_nutrient_values fv\nJOIN dim_food f ON fv.food_id = f.food_id\nJOIN dim_nutrient n ON fv.nutrient_id = n.nutrient_id\nJOIN dim_food_group g ON f.food_group_id = g.food_group_id\nWHERE (g.food_group_name_normalized LIKE '%nozes%' OR g.food_group_name_normalized LIKE '%leite%')\n  AND n.nutrient_name = 'calcio_mg'\n  AND fv.value IS NOT NULL\nORDER BY fv.value DESC",
+      "checks": {
+        "sintaxe": "ok",
+        "seguranca": "ok",
+        "schema": "ok",
+        "eficiencia": "ok"
+      },
+      "status": "fail",
+      "passed": false,
+      "rows_agent": 33,
+      "motivo": "cardinalidade: agente 33 vs gold 35",
+      "order_matters": true,
+      "compare_mode": "rows"
+    },
+    {
+      "id": "Q005",
+      "difficulty": "aggregation",
+      "question": "Qual alimento mais calórico de cada grupo?",
+      "sql_gerado": "WITH ranked_foods AS (\n  SELECT \n    g.food_group_name,\n    f.food_name,\n    fv.value AS energia_kcal,\n    ROW_NUMBER() OVER (PARTITION BY g.food_group_id ORDER BY fv.value DESC) AS rnk\n  FROM fact_nutrient_values fv\n  JOIN dim_food f ON fv.food_id = f.food_id\n  JOIN dim_nutrient n ON fv.nutrient_id = n.nutrient_id\n  JOIN dim_food_group g ON f.food_group_id = g.food_group_id\n  WHERE n.nutrient_name = 'energia_kcal'\n    AND fv.value IS NOT NULL\n)\nSELECT food_group_name, food_name, energia_kcal\nFROM ranked_foods\nWHERE rnk = 1\nORDER BY energia_kcal DESC",
+      "checks": {
+        "sintaxe": "ok",
+        "seguranca": "ok",
+        "schema": "ok",
+        "eficiencia": "ok"
+      },
+      "status": "fail",
+      "passed": false,
+      "rows_agent": 15,
+      "motivo": "cardinalidade: agente 15 vs gold 22",
+      "order_matters": true,
+      "compare_mode": "rows"
+    },
+    {
+      "id": "Q006",
+      "difficulty": "ambiguous",
+      "question": "Qual alimento mais pobre em vitamina B1?",
+      "sql_gerado": "SELECT f.food_name, fv.value, n.unit\nFROM fact_nutrient_values fv\nJOIN dim_food f ON fv.food_id = f.food_id\nJOIN dim_nutrient n ON fv.nutrient_id = n.nutrient_id\nWHERE n.nutrient_name = 'tiamina_mg'\n  AND fv.value IS NOT NULL\n  AND fv.value > 0\nORDER BY fv.value ASC, f.food_name\nLIMIT 10",
+      "checks": {
+        "sintaxe": "ok",
+        "seguranca": "ok",
+        "schema": "ok",
+        "eficiencia": "ok"
+      },
+      "status": "pass",
+      "passed": true,
+      "rows_agent": 10,
+      "motivo": "sequência de valores (tolerante a empate) [Q006]",
+      "order_matters": true,
+      "compare_mode": "values",
+      "reused_from_previous_run": true
+    },
+    {
+      "id": "Q007",
+      "difficulty": "ambiguous",
+      "question": "Qual alimento tem melhor fonte de ômega-3?",
+      "sql_gerado": "SELECT \n    f.food_name, \n    MAX(CASE WHEN n.nutrient_name = 'ag_18_3_n3_g' THEN fv.value END) AS omega_3_g,\n    MAX(CASE WHEN n.nutrient_name = 'ag_20_5_g' THEN fv.value END) AS epa_g,\n    MAX(CASE WHEN n.nutrient_name = 'ag_22_6_g' THEN fv.value END) AS dha_g\nFROM \n    fact_nutrient_values fv\nJOIN \n    dim_food f ON fv.food_id = f.food_id\nJOIN \n    dim_nutrient n ON fv.nutrient_id = n.nutrient_id\nWHERE \n    n.nutrient_name IN ('ag_18_3_n3_g', 'ag_20_5_g', 'ag_22_6_g')\nGROUP BY \n    f.food_name\nHAVING \n    MAX(CASE WHEN n.nutrient_name = 'ag_18_3_n3_g' THEN fv.value END) IS NOT NULL\n    OR MAX(CASE WHEN n.nutrient_name = 'ag_20_5_g' THEN fv.value END) IS NOT NULL\n    OR MAX(CASE WHEN n.nutrient_name = 'ag_22_6_g' THEN fv.value END) IS NOT NULL\nORDER BY \n    (MAX(CASE WHEN n.nutrient_name = 'ag_18_3_n3_g' THEN fv.value END) + \n     MAX(CASE WHEN n.nutrient_name = 'ag_20_5_g' THEN fv.value END) + \n     MAX(CASE WHEN n.nutrient_name = 'ag_22_6_g' THEN fv.value END)) DESC\nLIMIT 10",
+      "checks": {
+        "sintaxe": "ok",
+        "seguranca": "ok",
+        "schema": "ok",
+        "eficiencia": "ok"
+      },
+      "status": "fail",
+      "passed": false,
+      "rows_agent": 10,
+      "motivo": "coluna 'food_name' do gold não tem correspondente no agente com os mesmos valores",
+      "order_matters": true,
+      "compare_mode": "rows"
+    },
+    {
+      "id": "Q008",
+      "difficulty": "simple_filter",
+      "question": "Qual alimento tem maior teor de zinco?",
+      "sql_gerado": "SELECT f.food_name, fv.value AS zinco_mg\nFROM fact_nutrient_values fv\nJOIN dim_food f ON fv.food_id = f.food_id\nJOIN dim_nutrient n ON fv.nutrient_id = n.nutrient_id\nWHERE n.nutrient_name = 'zinco_mg'\n  AND fv.value IS NOT NULL\nORDER BY fv.value DESC\nLIMIT 10",
+      "checks": {
+        "sintaxe": "ok",
+        "seguranca": "ok",
+        "schema": "ok",
+        "eficiencia": "ok"
+      },
+      "status": "pass",
+      "passed": true,
+      "rows_agent": 10,
+      "motivo": "subset por coluna [Q008]",
+      "order_matters": true,
+      "compare_mode": "rows",
+      "reused_from_previous_run": true
+    },
+    {
+      "id": "Q009",
+      "difficulty": "ambiguous",
+      "question": "Qual alimento é mais pobre em vitamina B3?",
+      "sql_gerado": "SELECT f.food_name, fv.value, n.unit\nFROM fact_nutrient_values fv\nJOIN dim_food f ON fv.food_id = f.food_id\nJOIN dim_nutrient n ON fv.nutrient_id = n.nutrient_id\nWHERE n.nutrient_name = 'niacina_mg'\n  AND fv.value IS NOT NULL\n  AND fv.value > 0\nORDER BY fv.value ASC, f.food_name\nLIMIT 10",
+      "checks": {
+        "sintaxe": "ok",
+        "seguranca": "ok",
+        "schema": "ok",
+        "eficiencia": "ok"
+      },
+      "status": "pass",
+      "passed": true,
+      "rows_agent": 10,
+      "motivo": "sequência de valores (tolerante a empate) [Q009]",
+      "order_matters": true,
+      "compare_mode": "values",
+      "reused_from_previous_run": true
+    },
+    {
+      "id": "Q010",
+      "difficulty": "ambiguous",
+      "question": "Quantos alimentos não possuem vitamina D?",
+      "sql_gerado": "SELECT COUNT(DISTINCT f.food_id) \nFROM dim_food f \nWHERE f.food_id NOT IN (\n  SELECT fv.food_id \n  FROM fact_nutrient_values fv \n  JOIN dim_nutrient n ON fv.nutrient_id = n.nutrient_id \n  WHERE n.nutrient_name = 'vitamina_d_mcg' \n    AND fv.value IS NOT NULL\n)",
+      "checks": {
+        "sintaxe": "ok",
+        "seguranca": "ok",
+        "schema": "ok",
+        "eficiencia": "ok"
+      },
+      "status": "regra11_ok",
+      "passed": true,
+      "resposta": "⚠️ Dados contidos na tabela TACO insuficientes: não é possível fornecer uma lista de alimentos com ou sem vitamina D, pois a pergunta original busca uma contagem geral de alimentos sem vitamina D. No entanto, podemos informar que, de acordo com a TACO, há 597 alimentos que não possuem registro de vitamina D.\n\nÉ importante notar que a TACO 4ª edição não possui dados de vitamina D para a maioria dos alimentos, o que limita a capacidade de fornecer informações precisas sobre a presença ou ausência dessa vitamina nos alimentos. Se você estiver procurando informações sobre a composição nutricional de alimentos específicos, recomendo refinar a busca para incluir apenas alimentos que tenham registros de nutrientes específicos. Além disso, é fundamental considerar que a vitamina D é um nutriente essencial, especialmente para a saúde óssea, e sua ingestão adequada pode ser alcançada por meio de uma dieta variada e, se necessário, suplementação.",
+      "reused_from_previous_run": true
+    },
+    {
+      "id": "Q011",
+      "difficulty": "simple_filter",
+      "question": "Quais alimentos possuem maior quantidade de vitamina D?",
+      "sql_gerado": "SELECT f.food_name, fv.value AS vitamina_d_mcg\nFROM fact_nutrient_values fv\nJOIN dim_food f ON fv.food_id = f.food_id\nJOIN dim_nutrient n ON fv.nutrient_id = n.nutrient_id\nWHERE n.nutrient_name = 'vitamina_d_mcg'\n  AND fv.value IS NOT NULL\n  AND fv.value > 0\nORDER BY fv.value DESC",
+      "checks": {
+        "sintaxe": "ok",
+        "seguranca": "ok",
+        "schema": "ok",
+        "eficiencia": "ok"
+      },
+      "status": "regra11_ok",
+      "passed": true,
+      "resposta": "⚠️ Dados contidos na tabela TACO insuficientes ou o alimento não apresenta quantidade significativa de vitamina D registrada na base. A TACO 4ª edição não possui dados de vitamina D para a maioria dos alimentos, o que limita a capacidade de fornecer um ranking de alimentos ricos nesse nutriente. Se você está procurando por fontes de vitamina D, é importante considerar que a maioria dos alimentos naturais não são ricos nesse nutriente, e as principais fontes geralmente são alimentos fortificados ou suplementos. Sugiro refinar a busca para outros nutrientes ou considerar a possibilidade de que os alimentos com vitamina D sejam mais comuns em categorias específicas, como laticínios fortificados ou peixes gordurosos, que podem não estar bem representados na base de dados utilizada.",
+      "reused_from_previous_run": true
+    },
+    {
+      "id": "Q012",
+      "difficulty": "join_group",
+      "question": "Quais alimentos mais ricos em gordura trans?",
+      "sql_gerado": "SELECT f.food_name, fv.value AS ag_18_1t_g, n.unit\nFROM fact_nutrient_values fv\nJOIN dim_food f ON fv.food_id = f.food_id\nJOIN dim_nutrient n ON fv.nutrient_id = n.nutrient_id\nWHERE n.nutrient_name IN ('ag_18_1t_g', 'ag_18_2t_g')\n  AND fv.value IS NOT NULL\n  AND fv.value > 0\nORDER BY fv.value DESC, f.food_name\nLIMIT 10",
+      "checks": {
+        "sintaxe": "ok",
+        "seguranca": "ok",
+        "schema": "ok",
+        "eficiencia": "ok"
+      },
+      "status": "fail",
+      "passed": false,
+      "rows_agent": 10,
+      "motivo": "coluna 'total_trans_g' do gold não tem correspondente no agente com os mesmos valores",
+      "order_matters": true,
+      "compare_mode": "rows"
+    },
+    {
+      "id": "Q013",
+      "difficulty": "simple_filter",
+      "question": "Quais alimentos com maior teor de ômega-6?",
+      "sql_gerado": "SELECT f.food_name, fv.value AS ag_poliinsaturados_g\nFROM fact_nutrient_values fv\nJOIN dim_food f ON fv.food_id = f.food_id\nJOIN dim_nutrient n ON fv.nutrient_id = n.nutrient_id\nWHERE n.nutrient_name = 'ag_poliinsaturados_g'\n  AND fv.value IS NOT NULL\nORDER BY fv.value DESC\nLIMIT 10",
+      "checks": {
+        "sintaxe": "ok",
+        "seguranca": "ok",
+        "schema": "ok",
+        "eficiencia": "ok"
+      },
+      "status": "pass",
+      "passed": true,
+      "rows_agent": 10,
+      "motivo": "subset por coluna [Q013]",
+      "order_matters": true,
+      "compare_mode": "rows",
+      "reused_from_previous_run": true
+    },
+    {
+      "id": "Q014",
+      "difficulty": "join_group",
+      "question": "Quais carnes mais gordurosas?",
+      "sql_gerado": "SELECT f.food_name, fv.value AS lipideos_g\nFROM fact_nutrient_values fv\nJOIN dim_food f ON fv.food_id = f.food_id\nJOIN dim_nutrient n ON fv.nutrient_id = n.nutrient_id\nJOIN dim_food_group g ON f.food_group_id = g.food_group_id\nWHERE g.food_group_name_normalized LIKE '%carnes%'\n  AND n.nutrient_name = 'lipideos_g'\n  AND fv.value IS NOT NULL\nORDER BY fv.value DESC\nLIMIT 10",
+      "checks": {
+        "sintaxe": "ok",
+        "seguranca": "ok",
+        "schema": "ok",
+        "eficiencia": "ok"
+      },
+      "status": "pass",
+      "passed": true,
+      "rows_agent": 10,
+      "motivo": "subset por coluna [Q014]",
+      "order_matters": true,
+      "compare_mode": "rows",
+      "reused_from_previous_run": true
+    },
+    {
+      "id": "Q015",
+      "difficulty": "aggregation",
+      "question": "Quais proteínas vegetais possuem maiores aminoácidos essenciais?",
+      "sql_gerado": "SELECT \n    f.food_name,\n    MAX(CASE WHEN n.nutrient_name = 'aa_leucina_g' THEN fv.value END) AS leucina_g,\n    MAX(CASE WHEN n.nutrient_name = 'aa_isoleucina_g' THEN fv.value END) AS isoleucina_g,\n    MAX(CASE WHEN n.nutrient_name = 'aa_lisina_g' THEN fv.value END) AS lisina_g,\n    MAX(CASE WHEN n.nutrient_name = 'aa_metionina_g' THEN fv.value END) AS metionina_g,\n    MAX(CASE WHEN n.nutrient_name = 'aa_triptofano_g' THEN fv.value END) AS triptofano_g,\n    MAX(CASE WHEN n.nutrient_name = 'aa_valina_g' THEN fv.value END) AS valina_g\nFROM \n    fact_nutrient_values fv\nJOIN \n    dim_food f ON fv.food_id = f.food_id\nJOIN \n    dim_nutrient n ON fv.nutrient_id = n.nutrient_id\nJOIN \n    dim_food_group g ON f.food_group_id = g.food_group_id\nWHERE \n    (g.food_group_name_normalized LIKE '%leguminosas%' \n     OR g.food_group_name_normalized LIKE '%nozes%' \n     OR g.food_group_name_normalized LIKE '%cereais%')\n    AND n.nutrient_name IN ('aa_leucina_g', 'aa_isoleucina_g', 'aa_lisina_g', 'aa_metionina_g', 'aa_triptofano_g', 'aa_valina_g')\n    AND fv.value IS NOT NULL\nGROUP BY \n    f.food_name\nORDER BY \n    leucina_g + isoleucina_g + lisina_g + metionina_g + triptofano_g + valina_g DESC\nLIMIT 10",
+      "checks": {
+        "sintaxe": "ok",
+        "seguranca": "ok",
+        "schema": "ok",
+        "eficiencia": "ok"
+      },
+      "status": "regra11_ok",
+      "passed": true,
+      "resposta": "Aqui estão os resultados da sua busca por proteínas vegetais com maiores aminoácidos essenciais por 100g do alimento:\n\n| Alimento | Leucina (g) | Isoleucina (g) | Lisina (g) | Metionina (g) | Triptofano (g) | Valina (g) |\n| --- | --- | --- | --- | --- | --- | --- |\n| Pé-de-moleque, amendoim | 0,97 | 0,50 | 0,48 | 0,14 | 0,07 | 0,58 |\n| Pastel, de carne, frito | 0,81 | 0,41 | 0,39 | 0,19 | 0,12 | 0,50 |\n\nObservação: É importante notar que o \"Pé-de-moleque, amendoim\" é uma fonte significativa de aminoácidos essenciais, como leucina e valina, por 100g do alimento. No entanto, o \"Pastel, de carne, frito\" não é uma opção vegetal, pois contém carne.\n\n⚠️ Dados contidos na tabela TACO insuficientes ou o alimento não apresenta quantidade significativa desse nutriente registrada na base. A limitação da tabela TACO é que apenas 26 alimentos têm aminoácidos registrados, o que não representa o universo de alimentos. Além disso, o resultado apresentado foi truncado, mostrando apenas 2 resultados. Sugiro refinar a busca para obter mais resultados relevantes."
+    },
+    {
+      "id": "Q016",
+      "difficulty": "join_group",
+      "question": "Quais proteínas vegetais possuem menor teor de proteína em 100g?",
+      "sql_gerado": "SELECT f.food_name, fv.value AS proteina_g\nFROM fact_nutrient_values fv\nJOIN dim_food f ON fv.food_id = f.food_id\nJOIN dim_nutrient n ON fv.nutrient_id = n.nutrient_id\nJOIN dim_food_group g ON f.food_group_id = g.food_group_id\nWHERE (g.food_group_name_normalized LIKE '%leguminosas%' \n       OR g.food_group_name_normalized LIKE '%nozes%' \n       OR g.food_group_name_normalized LIKE '%cereais%')\n  AND n.nutrient_name = 'proteina_g'\n  AND fv.value IS NOT NULL\n  AND fv.value > 0\nORDER BY fv.value ASC, f.food_name\nLIMIT 10",
+      "checks": {
+        "sintaxe": "ok",
+        "seguranca": "ok",
+        "schema": "ok",
+        "eficiencia": "ok"
+      },
+      "status": "fail",
+      "passed": false,
+      "rows_agent": 10,
+      "motivo": "coluna 'food_group_name' do gold não tem correspondente no agente com os mesmos valores",
+      "order_matters": true,
+      "compare_mode": "rows"
+    },
+    {
+      "id": "Q017",
+      "difficulty": "aggregation",
+      "question": "Quais proteínas vegetais possuem maior teor de proteína e baixo teor de carboidrato?",
+      "sql_gerado": "SELECT \n    f.food_name, \n    MAX(CASE WHEN n.nutrient_name = 'proteina_g' THEN fv.value END) AS proteina_g,\n    MAX(CASE WHEN n.nutrient_name = 'carboidrato_g' THEN fv.value END) AS carboidrato_g\nFROM \n    fact_nutrient_values fv\nJOIN \n    dim_food f ON fv.food_id = f.food_id\nJOIN \n    dim_nutrient n ON fv.nutrient_id = n.nutrient_id\nJOIN \n    dim_food_group g ON f.food_group_id = g.food_group_id\nWHERE \n    (g.food_group_name_normalized LIKE '%leguminosas%' \n     OR g.food_group_name_normalized LIKE '%nozes%' \n     OR g.food_group_name_normalized LIKE '%cereais%')\n  AND n.nutrient_name IN ('proteina_g', 'carboidrato_g')\n  AND fv.value IS NOT NULL\nGROUP BY \n    f.food_name\nHAVING \n    MAX(CASE WHEN n.nutrient_name = 'proteina_g' THEN fv.value END) > 0\n  AND MAX(CASE WHEN n.nutrient_name = 'carboidrato_g' THEN fv.value END) > 0\nORDER BY \n    proteina_g DESC, \n    carboidrato_g ASC\nLIMIT 10",
+      "checks": {
+        "sintaxe": "ok",
+        "seguranca": "ok",
+        "schema": "ok",
+        "eficiencia": "ok"
+      },
+      "status": "fail",
+      "passed": false,
+      "rows_agent": 10,
+      "motivo": "coluna 'food_group_name' do gold não tem correspondente no agente com os mesmos valores",
+      "order_matters": true,
+      "compare_mode": "rows"
+    },
+    {
+      "id": "Q018",
+      "difficulty": "simple_filter",
+      "question": "Quais alimentos possuem maior quantidade de leucina?",
+      "sql_gerado": "SELECT f.food_name, fv.value AS aa_leucina_g\nFROM fact_nutrient_values fv\nJOIN dim_food f ON fv.food_id = f.food_id\nJOIN dim_nutrient n ON fv.nutrient_id = n.nutrient_id\nWHERE n.nutrient_name = 'aa_leucina_g'\n  AND fv.value IS NOT NULL\nORDER BY fv.value DESC\nLIMIT 10",
+      "checks": {
+        "sintaxe": "ok",
+        "seguranca": "ok",
+        "schema": "ok",
+        "eficiencia": "ok"
+      },
+      "status": "regra11_ok",
+      "passed": true,
+      "resposta": "Aqui estão os alimentos com maior quantidade de leucina por 100g do alimento:\n\n| Alimento | Leucina (g) |\n| --- | --- |\n| Queijo, mozarela | 2,38 g |\n| Queijo, prato | 2,19 g |\n| Salame | 2,02 g |\n| Presunto, com capa de gordura | 1,17 g |\n| Apresuntado | 1,16 g |\n| Presunto, sem capa de gordura | 1,15 g |\n| Pé-de-moleque, amendoim | 0,97 g |\n| Mortadela | 0,94 g |\n| Pastel, de carne, frito | 0,81 g |\n| Quibe, cru | 0,78 g |\n\nEsses valores são por 100g do alimento. É importante notar que a leucina é um aminoácido essencial, fundamental para o crescimento e manutenção muscular. Alguns desses alimentos, como queijos e carnes processadas, podem ser considerados fontes significativas de leucina.\n\n⚠️ Dados insuficientes: é importante lembrar que a TACO 4ª edição possui dados de aminoácidos para apenas 26 alimentos, o que pode limitar a representatividade desse ranking. Portanto, esses resultados não representam o universo de alimentos disponíveis."
+    },
+    {
+      "id": "Q019",
+      "difficulty": "join_group",
+      "question": "Quais proteínas de fonte vegetal possuem maior teor de leucina?",
+      "sql_gerado": "SELECT f.food_name, fv.value AS leucina_g\nFROM fact_nutrient_values fv\nJOIN dim_food f ON fv.food_id = f.food_id\nJOIN dim_nutrient n ON fv.nutrient_id = n.nutrient_id\nJOIN dim_food_group g ON f.food_group_id = g.food_group_id\nWHERE (g.food_group_name_normalized LIKE '%leguminosas%' \n       OR g.food_group_name_normalized LIKE '%nozes%' \n       OR g.food_group_name_normalized LIKE '%cereais%')\n  AND n.nutrient_name = 'aa_leucina_g'\n  AND fv.value IS NOT NULL\nORDER BY fv.value DESC",
+      "checks": {
+        "sintaxe": "ok",
+        "seguranca": "ok",
+        "schema": "ok",
+        "eficiencia": "ok"
+      },
+      "status": "regra11_ok",
+      "passed": true,
+      "resposta": "Aqui estão os resultados da sua busca por fontes vegetais ricas em leucina por 100g do alimento:\n\n| Nome do Alimento | Leucina (g) |\n| --- | --- |\n| Pé-de-moleque, amendoim | 0,97 g |\n| Pastel, de carne, frito | 0,81 g |\n\nObservação: É importante notar que o \"Pastel, de carne, frito\" não é uma fonte vegetal pura, pois contém carne. Portanto, se você está procurando por fontes vegetais estritas, o pé-de-moleque (amendoim) é a opção com maior teor de leucina, com aproximadamente 0,97g por 100g do alimento.\n\nAlém disso, é relevante mencionar que a leucina é um aminoácido essencial, importante para o crescimento e manutenção muscular. No entanto, os dados disponíveis na TACO sobre aminoácidos são limitados, cobrindo apenas 26 alimentos, o que pode não representar o universo de alimentos disponíveis.\n\n⚠️ Dados contidos na tabela TACO insuficientes: A busca por fontes vegetais ricas em leucina pode não ter retornado todos os resultados possíveis devido à limitação dos dados de aminoácidos na base. Se você estiver procurando por mais opções, sugiro refinar a busca ou considerar outras fontes de informação nutricional."
+    },
+    {
+      "id": "Q020",
+      "difficulty": "aggregation",
+      "question": "Quais alimentos são mais calóricos e possuem maior quantidade de gordura?",
+      "sql_gerado": "SELECT \n    f.food_name, \n    fv1.value AS energia_kcal, \n    fv2.value AS lipideos_g\nFROM \n    fact_nutrient_values fv1\nJOIN \n    dim_food f ON fv1.food_id = f.food_id\nJOIN \n    dim_nutrient n1 ON fv1.nutrient_id = n1.nutrient_id\nJOIN \n    fact_nutrient_values fv2 ON f.food_id = fv2.food_id\nJOIN \n    dim_nutrient n2 ON fv2.nutrient_id = n2.nutrient_id\nWHERE \n    n1.nutrient_name = 'energia_kcal'\n    AND n2.nutrient_name = 'lipideos_g'\n    AND fv1.value IS NOT NULL\n    AND fv2.value IS NOT NULL\nORDER BY \n    fv1.value DESC, \n    fv2.value DESC, \n    f.food_name\nLIMIT 10",
+      "checks": {
+        "sintaxe": "ok",
+        "seguranca": "ok",
+        "schema": "ok",
+        "eficiencia": "ok"
+      },
+      "status": "fail",
+      "passed": false,
+      "rows_agent": 10,
+      "motivo": "os valores existem mas as linhas não alinham entre si",
+      "order_matters": true,
+      "compare_mode": "rows"
+    },
+    {
+      "id": "Q021",
+      "difficulty": "ambiguous",
+      "question": "Quais alimentos menos calóricos?",
+      "sql_gerado": "SELECT f.food_name, fv.value AS energia_kcal\nFROM fact_nutrient_values fv\nJOIN dim_food f ON fv.food_id = f.food_id\nJOIN dim_nutrient n ON fv.nutrient_id = n.nutrient_id\nWHERE n.nutrient_name = 'energia_kcal'\n  AND fv.value IS NOT NULL\n  AND fv.value > 0\nORDER BY fv.value ASC, f.food_name\nLIMIT 10",
+      "checks": {
+        "sintaxe": "ok",
+        "seguranca": "ok",
+        "schema": "ok",
+        "eficiencia": "ok"
+      },
+      "status": "pass",
+      "passed": true,
+      "rows_agent": 10,
+      "motivo": "subset por coluna [Q021]",
+      "order_matters": true,
+      "compare_mode": "rows"
+    }
+  ]
+}

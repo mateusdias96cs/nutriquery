@@ -247,7 +247,8 @@
       "clinical_note": "Amido de milho lidera com 0,6g/100g — esperado, é quase carboidrato puro.",
       "sql_reference": "SELECT f.food_name, fg.food_group_name, fv.value, n.unit FROM fact_nutrient_values fv JOIN dim_food f ON fv.food_id = f.food_id JOIN dim_food_group fg ON f.food_group_id = fg.food_group_id JOIN dim_nutrient n ON fv.nutrient_id = n.nutrient_id WHERE n.nutrient_name = 'proteina_g' AND fg.food_group_name IN ('Leguminosas e derivados','Nozes e sementes','Cereais e derivados') AND fv.value IS NOT NULL AND fv.value > 0 ORDER BY fv.value ASC LIMIT 10",
       "order_matters": true,
-      "compare_mode": "rows"
+      "compare_mode": "rows",
+      "optional_columns": ["food_group_name"]
     },
     {
       "id": "Q017",
@@ -262,7 +263,8 @@
       "clinical_note": "Amendoim torrado é o melhor custo-benefício prático: 22g proteína / 18g carbo. Soja farinha tem mais proteína (36g) mas também mais carbo (38g).",
       "sql_reference": "WITH proteina AS (SELECT fv.food_id, fv.value AS proteina_g FROM fact_nutrient_values fv JOIN dim_nutrient n ON fv.nutrient_id = n.nutrient_id WHERE n.nutrient_name = 'proteina_g'), carbo AS (SELECT fv.food_id, fv.value AS carbo_g FROM fact_nutrient_values fv JOIN dim_nutrient n ON fv.nutrient_id = n.nutrient_id WHERE n.nutrient_name = 'carboidrato_g') SELECT f.food_name, fg.food_group_name, p.proteina_g, c.carbo_g FROM proteina p JOIN carbo c ON p.food_id = c.food_id JOIN dim_food f ON p.food_id = f.food_id JOIN dim_food_group fg ON f.food_group_id = fg.food_group_id WHERE fg.food_group_name IN ('Leguminosas e derivados','Nozes e sementes','Cereais e derivados') AND p.proteina_g IS NOT NULL AND c.carbo_g IS NOT NULL ORDER BY p.proteina_g DESC, c.carbo_g ASC LIMIT 10",
       "order_matters": true,
-      "compare_mode": "rows"
+      "compare_mode": "rows",
+      "optional_columns": ["food_group_name"]
     },
     {
       "id": "Q018",
